@@ -14,9 +14,9 @@ try:
 except ImportError:
     PIL_AVAILABLE = False
 
-api_id = 123456 #ex
-api_hash = ""
-phone_number = "(ex: +9055555555)"
+api_id = 1252355
+api_hash = "68faf056dbaee039cdee7de4f894e822"
+phone_number = "+90 553 682 7255"
 client = TelegramClient("anon_session", api_id, api_hash)
 
 TELEGRAM_API_URL = "https://api.telegram.org/bot"
@@ -261,6 +261,7 @@ class TelegramGUI:
                 self.log(f"Try next older ID {test_id-1}...")
 
         if found_any:
+            delete_webhook = self.delete_webhook(self.bot_token)
             self.log("Now you can forward all messages if needed.")
         else:
             self.log("No older ID worked within our limit. Possibly no older messages or limit insufficient.")
@@ -362,6 +363,22 @@ class TelegramGUI:
 
         t = threading.Thread(target=do_forward)
         t.start()
+
+    def delete_webhook(self, bot_token):
+        url = f"{TELEGRAM_API_URL}{bot_token}/deleteWebhook?drop_pending_updates=true"
+        try:
+            r = requests.get(url)
+            data = r.json()
+            if data.get("ok"):
+                self.log("[deleteWebhook] Successfully deleted webhook")
+                return True
+            else:
+                self.log(f"[deleteWebhook] Error: {data}")
+                return False
+        except Exception as e:
+            self.log(f"[deleteWebhook] Request error: {e}")
+            return False
+
 
 
 if __name__ == "__main__":
