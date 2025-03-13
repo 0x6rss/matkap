@@ -508,34 +508,31 @@ class TelegramGUI:
         self.forward_continuation(from_chat_id, start_id=1)
 
     def forward_continuation(self, attacker_chat_id, start_id):
-        def do_forward():
-            max_id = self.last_message_id
-            success_count = 0
-            for msg_id in range(start_id, max_id + 1):
-                if self.stop_flag:
-                    self.stopped_id = msg_id
-                    self.root.after(0, lambda: self.log(f"⏹️ Stopped at ID {msg_id} by user."))
-                    break
-                ok = self.forward_msg(self.bot_token, attacker_chat_id, self.my_chat_id, msg_id)
-                if ok:
-                    success_count += 1
-            if not self.stop_flag:
-                txt = f"Forwarded from ID {start_id}..{max_id}, total success: {success_count}"
-                self.root.after(0, lambda: [
-                    self.log("[Result] " + txt.replace("\n", " | ")),
-                    messagebox.showinfo("Result", txt)
-                ])
-            else:
-                partial_txt = (
-                    f"Stopped at ID {self.stopped_id}, total success: {success_count}.\n"
-                    "Resume if needed."
-                )
-                self.root.after(0, lambda: [
-                    self.log("[Result] " + partial_txt.replace("\n", " | "))
-                ])
-        t = threading.Thread(target=do_forward)
-        t.start()
-
+        max_id = self.last_message_id
+        success_count = 0
+        for msg_id in range(start_id, max_id + 1):
+            if self.stop_flag:
+                self.stopped_id = msg_id
+                self.root.after(0, lambda: self.log(f"⏹️ Stopped at ID {msg_id} by user."))
+                break
+            ok = self.forward_msg(self.bot_token, attacker_chat_id, self.my_chat_id, msg_id)
+            if ok:
+                success_count += 1
+        if not self.stop_flag:
+            txt = f"Forwarded from ID {start_id}..{max_id}, total success: {success_count}"
+            self.root.after(0, lambda: [
+                self.log("[Result] " + txt.replace("\n", " | ")),
+                messagebox.showinfo("Result", txt)
+            ])
+        else:
+            partial_txt = (
+                f"Stopped at ID {self.stopped_id}, total success: {success_count}.\n"
+                "Resume if needed."
+            )
+            self.root.after(0, lambda: [
+                self.log("[Result] " + partial_txt.replace("\n", " | "))
+            ])
+                
 if __name__ == "__main__":
     root = tk.Tk()
     app = TelegramGUI(root)
