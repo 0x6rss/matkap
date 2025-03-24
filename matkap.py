@@ -8,6 +8,8 @@ from tkinter import messagebox
 from tkinter.scrolledtext import ScrolledText
 from telethon import TelegramClient
 from dotenv import load_dotenv
+import time
+import threading
 
 import fofa_api
 import urlscan_api  
@@ -35,9 +37,12 @@ TELEGRAM_API_URL = "https://api.telegram.org/bot"
 class TelegramGUI:
     def __init__(self, root):
         self.root = root
-        self.root.title("Matkap by 0x6rss")
+        self.root.title("Telegram Bot Infiltration Tool")
         self.root.geometry("1300x700")  
         self.root.resizable(True, True)
+
+        self.rate_limit_lock = threading.Lock()
+        self.rate_limit_until = 0  # time.time() until which we're blocked
 
         self.themes = {
             "Light": {
@@ -90,7 +95,7 @@ class TelegramGUI:
 
         self.header_label = tk.Label(
             self.header_frame,
-            text="Matkap - hunt down malicious telegram bots",
+            text="Hunt down malicious telegram bots",
             font=("Arial", 16, "bold"),
             bg=self.themes[self.current_theme]["header_bg"],
             fg=self.themes[self.current_theme]["fg"],
@@ -509,26 +514,64 @@ class TelegramGUI:
 
 
     def forward_msg(self, bot_token, from_chat_id, to_chat_id, message_id):
+        """
+        Modified forward_msg that blocks ALL threads until 'retry_after' has elapsed
+        if any thread hits 429 (Too Many Requests).
+        """
         url = f"{TELEGRAM_API_URL}{bot_token}/forwardMessage"
         payload = {
             "from_chat_id": from_chat_id,
             "chat_id": to_chat_id,
             "message_id": message_id
         }
+
+        # --- Acquire lock to check if we are still rate-limited ---
+        with self.rate_limit_lock:
+            now = time.time()
+            if now < self.rate_limit_until:
+                wait_time = self.rate_limit_until - now
+                self.log(f"⏱️ [Thread {threading.get_ident()}] Waiting {int(wait_time)}s due to Telegram rate-limit.")
+                time.sleep(wait_time)
+
+        # At this point, we are allowed to make a request (lock is released automatically)
         try:
             r = self.session.post(url, json=payload)
             data = r.json()
+            
+            # Check success
             if data.get("ok"):
                 self.log(f"✅ Forwarded message ID {message_id}.")
+                # Save message content in a separate thread
                 threading.Thread(
                     target=self.async_save_message_content, 
-                    args=(bot_token, from_chat_id, message_id), 
+                    args=(bot_token, from_chat_id, message_id),
                     daemon=True
                 ).start()
                 return True
-            else:
-                self.log(f"⚠️ Forward fail ID {message_id}, reason: {data}")
-                return False
+
+            # Check for 429 rate-limit
+            if data.get("error_code") == 429:
+                retry_after = data.get("parameters", {}).get("retry_after", 5)
+                self.log(f"⚠️ 429 Too Many Requests. Blocking all threads for {retry_after} seconds.")
+
+                # Update the class-wide rate_limit_until
+                with self.rate_limit_lock:
+                    new_block_until = time.time() + retry_after
+                    # Only push it out further if it's actually further in the future
+                    if new_block_until > self.rate_limit_until:
+                        self.rate_limit_until = new_block_until
+                
+                # Option A: Return False here and let the caller handle retries
+                # return False
+                
+                # Option B: Sleep and then retry immediately (recursively)
+                time.sleep(retry_after)
+                return self.forward_msg(bot_token, from_chat_id, to_chat_id, message_id)
+
+            # If some other error code
+            self.log(f"⚠️ Forward fail ID {message_id}, reason: {data}")
+            return False
+
         except Exception as e:
             self.log(f"❌ Forward error ID {message_id}: {e}")
             return False
