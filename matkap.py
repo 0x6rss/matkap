@@ -37,7 +37,7 @@ TELEGRAM_API_URL = "https://api.telegram.org/bot"
 class TelegramGUI:
     def __init__(self, root):
         self.root = root
-        self.root.title("Telegram Bot Infiltration Tool")
+        self.root.title("Matkap by 0x6rss")
         self.root.geometry("1300x700")  
         self.root.resizable(True, True)
 
@@ -95,7 +95,7 @@ class TelegramGUI:
 
         self.header_label = tk.Label(
             self.header_frame,
-            text="Hunt down malicious telegram bots",
+            text="Matkap - hunt down malicious telegram bots",
             font=("Arial", 16, "bold"),
             bg=self.themes[self.current_theme]["header_bg"],
             fg=self.themes[self.current_theme]["fg"],
