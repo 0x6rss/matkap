@@ -3,11 +3,7 @@ import json
 import os
 import threading
 import asyncio
-from PySide6.QtWidgets import (
-    QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    QLabel, QPushButton, QLineEdit, QTextEdit, QComboBox,
-    QMessageBox, QCheckBox, QSpinBox, QDialog, QGridLayout
-)
+from PySide6.QtWidgets import QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QLineEdit, QTextEdit, QComboBox, QMessageBox, QCheckBox, QSpinBox, QDialog, QGridLayout
 from PySide6.QtGui import QFont, QIcon
 from PySide6.QtCore import Qt
 from telethon import TelegramClient
@@ -78,9 +74,17 @@ class SettingsDialog(QDialog):
 
     def reset_settings(self):
         default_config = {
-            "theme":"Dark","font_size":12,"max_older_attempts":300,"log_limit":1000,
-            "auto_scroll":True,"telegram_phone":"","telegram_api_id":"",
-            "telegram_api_hash":"","fofa_email":"","fofa_key":"","urlscan_key":""
+            "theme":"Dark",
+            "font_size":12,
+            "max_older_attempts":300,
+            "log_limit":1000,
+            "auto_scroll":True,
+            "telegram_phone":"",
+            "telegram_api_id":"",
+            "telegram_api_hash":"",
+            "fofa_email":"",
+            "fofa_key":"",
+            "urlscan_key":""
         }
         with open(CONFIG_FILE, 'w') as f:
             json.dump(default_config, f, indent=4)
@@ -124,9 +128,17 @@ class matkap(QMainWindow):
 
     def load_config(self):
         default_config = {
-            "theme":"Dark","font_size":12,"max_older_attempts":300,"log_limit":1000,
-            "auto_scroll":True,"telegram_phone":"","telegram_api_id":"",
-            "telegram_api_hash":"","fofa_email":"","fofa_key":"","urlscan_key":""
+            "theme":"Dark",
+            "font_size":12,
+            "max_older_attempts":300,
+            "log_limit":1000,
+            "auto_scroll":True,
+            "telegram_phone":"",
+            "telegram_api_id":"",
+            "telegram_api_hash":"",
+            "fofa_email":"",
+            "fofa_key":"",
+            "urlscan_key":""
         }
         if os.path.exists(CONFIG_FILE):
             with open(CONFIG_FILE, 'r') as f:
@@ -156,21 +168,13 @@ class matkap(QMainWindow):
         self.infiltrate_btn.clicked.connect(lambda: threading.Thread(target=self._start_infiltration, daemon=True).start())
         form.addWidget(self.infiltrate_btn)
         self.forward_btn = QPushButton("2) Forward All")
-        self.forward_btn.clicked.connect(lambda: threading.Thread(
-            target=self.forward_continuation,
-            args=(self.chat_id_input.text().strip(), 1),
-            daemon=True
-        ).start())
+        self.forward_btn.clicked.connect(lambda: threading.Thread(target=self.forward_continuation, args=(self.chat_id_input.text().strip(), 1), daemon=True).start())
         form.addWidget(self.forward_btn)
         self.stop_btn = QPushButton("⛔ Stop")
         self.stop_btn.clicked.connect(self.stop_forwarding)
         form.addWidget(self.stop_btn)
         self.resume_btn = QPushButton("▶️ Resume")
-        self.resume_btn.clicked.connect(lambda: threading.Thread(
-            target=self.forward_continuation,
-            args=(self.chat_id_input.text().strip(), self.stopped_id + 1),
-            daemon=True
-        ).start())
+        self.resume_btn.clicked.connect(lambda: threading.Thread(target=self.forward_continuation, args=(self.chat_id_input.text().strip(), self.stopped_id + 1), daemon=True).start())
         form.addWidget(self.resume_btn)
         self.fofa_btn = QPushButton("Hunt FOFA")
         self.fofa_btn.clicked.connect(lambda: threading.Thread(target=self._fofa_hunt_process, daemon=True).start())
@@ -241,12 +245,7 @@ class matkap(QMainWindow):
 
     async def telethon_send_start(self, bot_username):
         try:
-            client = TelegramClient(
-                'anon_session',
-                int(self.config['telegram_api_id']),
-                self.config['telegram_api_hash'],
-                app_version='9.4.0'
-            )
+            client = TelegramClient('anon_session', int(self.config['telegram_api_id']), self.config['telegram_api_hash'], app_version='9.4.0')
             await client.start(self.config['telegram_phone'])
             self.log("✅ [Telethon] Logged in with your account.")
             if not bot_username.startswith("@"):
@@ -312,17 +311,10 @@ class matkap(QMainWindow):
 
     def forward_msg(self, token, from_id, to_id, msg_id):
         try:
-            r = self.session.post(
-                f"{TELEGRAM_API_URL}{token}/forwardMessage",
-                json={"from_chat_id": from_id, "chat_id": to_id, "message_id": msg_id}
-            ).json()
+            r = self.session.post(f"{TELEGRAM_API_URL}{token}/forwardMessage", json={"from_chat_id": from_id, "chat_id": to_id, "message_id": msg_id}).json()
             if r.get('ok'):
                 self.log(f"✅ Forwarded message ID {msg_id}.")
-                threading.Thread(
-                    target=self.async_save_message_to_file,
-                    args=(token, from_id, msg_id),
-                    daemon=True
-                ).start()
+                threading.Thread(target=self.async_save_message_to_file, args=(token, from_id, msg_id), daemon=True).start()
                 return True
             else:
                 self.log(f"⚠️ Forward fail ID {msg_id}, reason: {r}")
@@ -348,11 +340,7 @@ class matkap(QMainWindow):
     def resume_forward(self):
         self.log(f"▶️ Resuming from ID {self.stopped_id + 1}")
         self.stop_flag = False
-        threading.Thread(
-            target=self.forward_continuation,
-            args=(self.chat_id_input.text().strip(), self.stopped_id + 1),
-            daemon=True
-        ).start()
+        threading.Thread(target=self.forward_continuation, args=(self.chat_id_input.text().strip(), self.stopped_id + 1), daemon=True).start()
 
     def save_message_to_file(self, chat_id, content):
         os.makedirs('captured_messages', exist_ok=True)
@@ -383,10 +371,7 @@ class matkap(QMainWindow):
 
     def get_message_content(self, token, chat_id, msg_id):
         try:
-            r = self.session.post(
-                f"{TELEGRAM_API_URL}{token}/forwardMessage",
-                json={"chat_id": self.my_chat_id, "from_chat_id": chat_id, "message_id": msg_id}
-            )
+            r = self.session.post(f"{TELEGRAM_API_URL}{token}/forwardMessage", json={"chat_id": self.my_chat_id, "from_chat_id": chat_id, "message_id": msg_id})
             msg = r.json().get('result', {})
             return {
                 'message_id': msg_id,
@@ -411,13 +396,15 @@ class matkap(QMainWindow):
 
     def _fofa_hunt_process(self):
         self.log("🔎 Starting FOFA hunt for body='api.telegram.org' ...")
-        results = fofa_api.search_fofa_and_hunt()
+        email = self.config.get("fofa_email", "")
+        key = self.config.get("fofa_key", "")
+        results = fofa_api.search_fofa_and_hunt(email, key)
         if not results:
             self.log("🚫 FOFA API Error or no results")
             self.log("📝 FOFA hunt finished.")
             return
         for site, toks, chats in results:
-            if site.startswith(("Error", "FOFA")):
+            if site.startswith("Error"):
                 self.log(f"🚫 {site}")
                 continue
             if site.startswith("No results"):
@@ -435,9 +422,10 @@ class matkap(QMainWindow):
 
     def _urlscan_hunt_process(self):
         self.log("🔎 Starting URLScan hunt for domain:api.telegram.org ...")
-        results = urlscan_api.search_urlscan_and_hunt()
+        api_key = self.config.get("urlscan_key", "")
+        results = urlscan_api.search_urlscan_and_hunt(api_key)
         if not results:
-            self.log("⚠️ No URLScan results found.")
+            self.log("🚫 URLScan API Error or no results")
             self.log("📝 URLScan hunt finished.")
             return
         for site, toks, chats in results:
