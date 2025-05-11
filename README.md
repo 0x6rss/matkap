@@ -1,125 +1,125 @@
-# Matkap  
-Matkap - hunt down malicious Telegram bots  
+# Matkap
 
-### Warning: Keep in mind that your Telegram account might get banned while using this tool. For completely safe usage, you can use the website instead: https://matkap.cti.monster
-Matkap is a powerful tool designed to infiltrate and monitor Telegram bots by utilizing the Telegram Bot API and Telethon. It automates the process of capturing messages from malicious bots and forwarding them to your own account.
-<br>
-## Disclaimer (Legal & Ethical Use)
-Matkap is intended for educational and research purposes only. This tool is designed to help cybersecurity professionals analyze and understand Telegram bot interactions, particularly those that may pose security risks.
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE) [![Python](https://img.shields.io/badge/python-3.7%2B-blue.svg)](https://www.python.org/) [![Build Status](https://img.shields.io/badge/build-passing-green)](#)
 
-🔹 By using Matkap, you agree to the following terms:
+> **Matkap** is a desktop application for ethical security research, enabling rapid infiltration and analysis of potentially malicious Telegram bots via a user-friendly GUI.
 
-You must not use this tool for illegal activities or unauthorized access.
-You assume full responsibility for any actions performed with this tool.
-The developers and contributors are not liable for any misuse, damages, or legal consequences arising from the use of Matkap.
-Ensure you comply with Telegram's API Terms of Service and all applicable laws in your jurisdiction.
-📌 If you do not agree with these terms, you should not use this tool.
+---
 
+## Table of Contents
+- [Key Features](#-key-features)
+- [Screenshots](#-screenshots)
+- [Installation](#️-installation)
+- [Configuration](#-configuration)
+- [Usage](#-usage)
+- [Output & Logs](#-output--logs)
+- [Contributing](#-contributing)
+- [License](#-license)
 
-## 📌 Features
- 
-- **FOFA & URLScan Integration** – Searches for leaked Bot Tokens / Chat IDs in websites
-- **export logs** - export hunt logs
-  
-  
+---
 
+## Key Features
 
+- **Centralized Configuration**: All settings in `config.json` for themes, credentials, and API keys.
+- **Modern GUI**: Dark/Light mode, adjustable font sizes, auto-scroll logs.
+- **Threaded Operations**: All long-running tasks (infiltration, forwarding, scanning) run in background threads to ensure a responsive interface.
+- **Telegram Bot Infiltration**: Validate bot tokens, send `/start` via Telethon, capture and forward historical messages.
+- **FOFA & URLScan Scans**: Integrated API hunters to discover exposed tokens and chat IDs on FOFA and URLScan.
+- **Export & Persistence**: Save logs to `logs.txt` and captured messages under `captured_messages/` with structured headers.
 
+---
 
-https://github.com/user-attachments/assets/44599ccd-4b99-461b-9967-913908882771
+## Screenshots
 
+<p align="center">
+  <img src="https://i.imgur.com/PkrTk6K.png" alt="UI" width="400"/>
+</p>
+<p align="center">
+  <img src="https://i.imgur.com/gSOHrRQ.png" alt="SettingsUI" width="400"/>
+</p>
 
+---
 
-![image](https://github.com/user-attachments/assets/3b89f9c9-a7a5-48c4-b27d-ef2fc4d128dd)
+## Installation
 
+1. **Clone the repository**
+   ```bash
+   git clone https://github.com/0x6rss/matkap.git
+   cd matkap
+   ```
+2. **Create virtual environment (optional but recommended)**
+   ```bash
+   python -m venv venv
+   source venv/bin/activate  # Linux/macOS
+   venv\Scripts\activate   # Windows
+   ```
+3. **Install dependencies**
+   ```bash
+   pip install -r requirements.txt
+   ```
 
+---
 
+## Configuration
 
+After the first launch, `config.json` is auto-generated. Edit it to provide your credentials and preferences:
 
-## 🛠 Installation
-
-### 🔹 Prerequisites
-Before running **Matkap**, ensure you have the following:
-
-- **Python 3.7+** installed on your system.
-- **Pip** to install packages.
-- An account on [my.telegram.org/apps](https://my.telegram.org/apps) to get your **Telegram API** credentials (`api_id`, `api_hash`, `phone_number`).
-- **(Optional)** [FOFA Account](https://fofa.info/) & [URLScan Account](https://urlscan.io/) if you want scanning functionality:
-  - **FOFA_EMAIL**, **FOFA_KEY** for FOFA
-  - **URLSCAN_API_KEY** for URLScan
-
-### 🔹 Telegram API Credentials (Using a `.env` File)
-
-1. **Visit** [my.telegram.org/apps](https://my.telegram.org/apps) and log in with your phone number.  
-2. **Create a new application** and note the following:
-   - **api_id**
-   - **api_hash**
-   - **phone_number** (the Telegram account you want to use).
-3. In your project folder, create a **`.env`** file and add:
-   ```dotenv
-   TELEGRAM_API_ID=123456
-   TELEGRAM_API_HASH=your_api_hash
-   TELEGRAM_PHONE=+900000000000
-
-   # (Optional) For FOFA & URLScan:
-   FOFA_EMAIL=your_fofa_email
-   FOFA_KEY=your_fofa_key
-   URLSCAN_API_KEY=your_urlscan_api_key
-
-
-
-
-
-```bash
-# Clone the repository
->>git clone https://github.com/0x6rss/matkap.git
-
-# Navigate into the project folder
->>cd matkap
-
-# Create and fill out your .env file 
-# with TELEGRAM_API_ID, TELEGRAM_API_HASH, TELEGRAM_PHONE 
-# (and FOFA_EMAIL, FOFA_KEY, URLSCAN_API_KEY if you plan to use them)
-
-# Install dependencies
->>pip install -r requirements.txt
-
-# Run Matkap
->>python matkap.py
+```json
+{
+  "theme": "Dark",
+  "font_size": 12,
+  "max_older_attempts": 300,
+  "log_limit": 1000,
+  "auto_scroll": true,
+  "telegram_phone": "+1234567890",
+  "telegram_api_id": "123456",
+  "telegram_api_hash": "your_api_hash",
+  "fofa_email": "your_fofa_email",
+  "fofa_key": "your_fofa_key",
+  "urlscan_key": "your_urlscan_key"
+}
 ```
 
+- **telegram_phone**, **telegram_api_id**, **telegram_api_hash**: Credentials from [my.telegram.org/apps](https://my.telegram.org/apps)
+- **fofa_email**, **fofa_key**, **urlscan_key**: Optional API keys for extended scanning
+- **theme**: `Dark` or `Light`
+- **font_size**: Log area font size
+- **max_older_attempts**: Number of backward message IDs to probe
+- **log_limit**: Maximum lines retained in log view
+- **auto_scroll**: Toggle automatic scrolling
+
+---
+
 ## Usage
-When you run the code for the first time, Telegram will send you a login code. You need to enter this code into the terminal where you ran the script.
-![image](https://github.com/user-attachments/assets/a4791bb2-2389-4fa9-bcab-b1fea962de4f)
 
+Launch the application:
+```bash
+python matkap.py
+```
 
-1. **Start Attack**  
-   - Enter the malicious bot token (e.g., `bot12345678:ABC...`) and chat id.
+1. **Start Attack**: Input bot token (e.g. `bot123:ABC...`) and target chat ID, click **Start Attack**.
+2. **Forward All**: Click **Forward All** to retrieve messages history; use **Stop**/**Resume** to control.
+3. **Hunt FOFA**: Click **Hunt FOFA** to search exposed bot artifacts via FOFA API.
+4. **Hunt URLScan**: Click **Hunt URLScan** to scan via URLScan API.
+5. **Export Logs**: Click **Export Logs** to save `logs.txt`.
 
-2. **Forward All Messages**  
-   - Forward older messages by iterating through message IDs.  
-   - You can **Stop** or **Resume** forwarding at any time.
+---
 
-3. **Hunt With FOFA**  
-   - Searches for exposed Bot Tokens / Chat IDs on sites indexed by FOFA (`body="api.telegram.org"`).  
-   - Results appear in the **Process Log**.
+## Output & Logs
+- **Logs**: Saved in `logs.txt` with timestamped entries.
+- **Captured Messages**: Stored in `captured_messages/` with detailed headers.
 
-4. **Hunt With URLScan**  
-   - Similarly hunts for exposed tokens / chat IDs referencing `domain:api.telegram.org` using **URLScan**.  
-   - Also logs them in the **Process Log**.
+---
 
-5. **Export captured messages**  
-   - captured Telegram messages are instantly saved to the "captured_messages" directory
+## Contributing
+Contributions, issues, and feature requests are welcome! Please see [CONTRIBUTING](CONTRIBUTING.md).
 
+---
 
+## License
+This project is licensed under the MIT License. See [LICENSE](LICENSE) for details.
 
+---
 
-
-
-
-
-
-
-
-
-
+## Legal
+Please refer to the [LEGAL](LEGAL.md) file for the full legal disclaimer and terms of use.
