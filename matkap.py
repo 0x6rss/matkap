@@ -1,421 +1,243 @@
-import requests
-import tkinter as tk
-import tkinter.ttk as ttk
-import asyncio
+import sys
+import json
 import os
 import threading
-from tkinter import messagebox
-from tkinter.scrolledtext import ScrolledText
+import asyncio
+from PySide6.QtWidgets import QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QLineEdit, QTextEdit, QComboBox, QMessageBox, QCheckBox, QSpinBox, QDialog, QGridLayout
+from PySide6.QtGui import QFont, QIcon
+from PySide6.QtCore import Qt
 from telethon import TelegramClient
-from dotenv import load_dotenv
-
+import requests
 import fofa_api
-import urlscan_api  
+import urlscan_api
 
-try:
-    from PIL import Image, ImageTk
-    PIL_AVAILABLE = True
-except ImportError:
-    PIL_AVAILABLE = False
-
-load_dotenv()
-
-env_api_id = os.getenv("TELEGRAM_API_ID", "0")
-env_api_hash = os.getenv("TELEGRAM_API_HASH", "")
-env_phone_number = os.getenv("TELEGRAM_PHONE", "")
-
-api_id = int(env_api_id) if env_api_id.isdigit() else 0
-api_hash = env_api_hash
-phone_number = env_phone_number
-
-client = TelegramClient("anon_session", api_id, api_hash, app_version="9.4.0")
-
+CONFIG_FILE = 'config.json'
 TELEGRAM_API_URL = "https://api.telegram.org/bot"
 
-class TelegramGUI:
-    def __init__(self, root):
-        self.root = root
-        self.root.title("Matkap by 0x6rss")
-        self.root.geometry("1300x700")  
-        self.root.resizable(True, True)
+class SettingsDialog(QDialog):
+    def __init__(self, config, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Settings")
+        self.setFixedWidth(500)
+        self.config = config
+        layout = QGridLayout()
+        self.setLayout(layout)
+        self.theme_combo = QComboBox()
+        self.theme_combo.addItems(["Dark", "Light"])
+        self.theme_combo.setCurrentText(config.get("theme", "Dark"))
+        layout.addWidget(QLabel("Theme:"), 0, 0)
+        layout.addWidget(self.theme_combo, 0, 1)
+        self.font_size_spin = QSpinBox()
+        self.font_size_spin.setRange(8, 24)
+        self.font_size_spin.setValue(config.get("font_size", 12))
+        layout.addWidget(QLabel("Font Size:"), 1, 0)
+        layout.addWidget(self.font_size_spin, 1, 1)
+        self.max_attempts_spin = QSpinBox()
+        self.max_attempts_spin.setRange(10, 10000)
+        self.max_attempts_spin.setValue(config.get("max_older_attempts", 300))
+        layout.addWidget(QLabel("Max Older Attempts:"), 2, 0)
+        layout.addWidget(self.max_attempts_spin, 2, 1)
+        self.log_limit_spin = QSpinBox()
+        self.log_limit_spin.setRange(100, 100000)
+        self.log_limit_spin.setValue(config.get("log_limit", 1000))
+        layout.addWidget(QLabel("Log Limit:"), 3, 0)
+        layout.addWidget(self.log_limit_spin, 3, 1)
+        self.auto_scroll_chk = QCheckBox("Auto Scroll Logs")
+        self.auto_scroll_chk.setChecked(config.get("auto_scroll", True))
+        layout.addWidget(self.auto_scroll_chk, 4, 0, 1, 2)
+        self.telegram_phone = QLineEdit(config.get("telegram_phone", ""))
+        layout.addWidget(QLabel("Telegram Phone:"), 5, 0)
+        layout.addWidget(self.telegram_phone, 5, 1)
+        self.telegram_api_id = QLineEdit(str(config.get("telegram_api_id", "")))
+        layout.addWidget(QLabel("Telegram API ID:"), 6, 0)
+        layout.addWidget(self.telegram_api_id, 6, 1)
+        self.telegram_api_hash = QLineEdit(config.get("telegram_api_hash", ""))
+        layout.addWidget(QLabel("Telegram API Hash:"), 7, 0)
+        layout.addWidget(self.telegram_api_hash, 7, 1)
+        self.fofa_email = QLineEdit(config.get("fofa_email", ""))
+        layout.addWidget(QLabel("FOFA Email:"), 8, 0)
+        layout.addWidget(self.fofa_email, 8, 1)
+        self.fofa_key = QLineEdit(config.get("fofa_key", ""))
+        layout.addWidget(QLabel("FOFA Key:"), 9, 0)
+        layout.addWidget(self.fofa_key, 9, 1)
+        self.urlscan_key = QLineEdit(config.get("urlscan_key", ""))
+        layout.addWidget(QLabel("URLScan Key:"), 10, 0)
+        layout.addWidget(self.urlscan_key, 10, 1)
+        self.save_btn = QPushButton("💾 Save Settings")
+        self.save_btn.clicked.connect(self.save_settings)
+        self.reset_btn = QPushButton("♻️ Reset to Default")
+        self.reset_btn.clicked.connect(self.reset_settings)
+        btn_layout = QHBoxLayout()
+        btn_layout.addWidget(self.save_btn)
+        btn_layout.addWidget(self.reset_btn)
+        layout.addLayout(btn_layout, 11, 0, 1, 2)
 
-        self.themes = {
-            "Light": {
-                "bg": "#FFFFFF",
-                "fg": "#000000",
-                "header_bg": "#AAAAAA",
-                "main_bg": "#FFFFFF"
-            },
-            "Dark": {
-                "bg": "#2E2E2E",
-                "fg": "#FFFFFF",
-                "header_bg": "#333333",
-                "main_bg": "#2E2E2E"
-            }
+    def reset_settings(self):
+        default_config = {
+            "theme":"Dark",
+            "font_size":12,
+            "max_older_attempts":300,
+            "log_limit":1000,
+            "auto_scroll":True,
+            "telegram_phone":"",
+            "telegram_api_id":"",
+            "telegram_api_hash":"",
+            "fofa_email":"",
+            "fofa_key":"",
+            "urlscan_key":""
         }
-        self.current_theme = "Light"
-        self.style = ttk.Style()
-        self.style.theme_use("clam")
-        self.configure_theme(self.current_theme)
+        with open(CONFIG_FILE, 'w') as f:
+            json.dump(default_config, f, indent=4)
+        QMessageBox.information(self, "Settings", "Settings have been reset.")
+        self.accept()
 
-        self.style.configure(
-            "Fofa.TButton",
-            background="#000080",  
-            foreground="#ADD8E6", 
-        )
+    def save_settings(self):
+        self.config.update({
+            "theme": self.theme_combo.currentText(),
+            "font_size": self.font_size_spin.value(),
+            "max_older_attempts": self.max_attempts_spin.value(),
+            "log_limit": self.log_limit_spin.value(),
+            "auto_scroll": self.auto_scroll_chk.isChecked(),
+            "telegram_phone": self.telegram_phone.text(),
+            "telegram_api_id": self.telegram_api_id.text(),
+            "telegram_api_hash": self.telegram_api_hash.text(),
+            "fofa_email": self.fofa_email.text(),
+            "fofa_key": self.fofa_key.text(),
+            "urlscan_key": self.urlscan_key.text()
+        })
+        with open(CONFIG_FILE, 'w') as f:
+            json.dump(self.config, f, indent=4)
+        self.accept()
 
-        self.style.configure("TLabel", background="#D9D9D9", foreground="black")
-        self.style.configure("TButton", background="#E1E1E1", foreground="black")
-        self.style.configure("TLabelframe", background="#C9C9C9", foreground="black")
-        self.style.configure("TLabelframe.Label", font=("Arial", 11, "bold"))
-        self.style.configure("TEntry", fieldbackground="#FFFFFF", foreground="black")
-
-        self.header_frame = tk.Frame(self.root, bg=self.themes[self.current_theme]["header_bg"])
-        self.header_frame.grid(row=0, column=0, columnspan=6, sticky="ew")
-        self.header_frame.grid_columnconfigure(1, weight=1)
-
-        self.logo_image = None
-        script_dir = os.path.dirname(os.path.abspath(__file__))
-        logo_path = os.path.join(script_dir, "logo.png")
-        if os.path.isfile(logo_path):
-            try:
-                if PIL_AVAILABLE:
-                    pil_img = Image.open(logo_path)
-                    self.logo_image = ImageTk.PhotoImage(pil_img)
-                else:
-                    self.logo_image = tk.PhotoImage(file=logo_path)
-            except Exception as e:
-                print("Logo load error:", e)
-                self.logo_image = None
-
-        self.header_label = tk.Label(
-            self.header_frame,
-            text="Matkap - hunt down malicious telegram bots",
-            font=("Arial", 16, "bold"),
-            bg=self.themes[self.current_theme]["header_bg"],
-            fg=self.themes[self.current_theme]["fg"],
-            image=self.logo_image,
-            compound="left",
-            padx=10
-        )
-        self.header_label.grid(row=0, column=0, sticky="w", padx=5, pady=5)
-
-        self.main_frame = tk.Frame(
-            self.root,
-            bg=self.themes[self.current_theme]["main_bg"],
-            highlightthickness=2,
-            bd=0,
-            relief="groove"
-        )
-        self.main_frame.grid(row=1, column=0, columnspan=6, sticky="nsew", padx=10, pady=10)
-        self.root.grid_rowconfigure(1, weight=1)
-        self.root.grid_columnconfigure(0, weight=1)
-
-        ttk.Label(self.main_frame, text="Color Theme:").grid(row=0, column=2, sticky="e", padx=5, pady=5)
-        self.theme_combo = ttk.Combobox(self.main_frame, values=list(self.themes.keys()), state="readonly")
-        self.theme_combo.current(0)
-        self.theme_combo.grid(row=0, column=3, padx=5, pady=5, sticky="ew")
-        self.theme_combo.bind("<<ComboboxSelected>>", self.switch_theme)
-
-        self.token_label = ttk.Label(self.main_frame, text="Malicious Bot Token:")
-        self.token_label.grid(row=1, column=0, sticky="w", padx=5, pady=5)
-        self.token_entry = ttk.Entry(self.main_frame, width=45)
-        self.token_entry.grid(row=1, column=1, padx=5, pady=5, sticky="ew")
-        self.add_placeholder(self.token_entry, "Example: bot12345678:AsHy7q9QB755Lx4owv76xjLqZwHDcFf7CSE")
-
-        self.chat_label = ttk.Label(self.main_frame, text="Malicious Chat ID (Forward):")
-        self.chat_label.grid(row=2, column=0, sticky="w", padx=5, pady=5)
-        self.chatid_entry = ttk.Entry(self.main_frame, width=45)
-        self.chatid_entry.grid(row=2, column=1, padx=5, pady=5, sticky="ew")
-        self.add_placeholder(self.chatid_entry, "Example: 123456789")
-
-        self.infiltrate_button = ttk.Button(
-            self.main_frame,
-            text="1) Start Attack",
-            command=self.start_infiltration
-        )
-        self.infiltrate_button.grid(row=3, column=0, padx=5, pady=5, sticky="w")
-
-        self.forward_button = ttk.Button(
-            self.main_frame,
-            text="2) Forward All Messages",
-            command=self.forward_all_messages
-        )
-        self.forward_button.grid(row=3, column=1, padx=5, pady=5, sticky="w")
-
-        self.stop_button = ttk.Button(
-            self.main_frame,
-            text="Stop",
-            command=self.stop_forwarding
-        )
-        self.stop_button.grid(row=3, column=2, padx=5, pady=5, sticky="w")
-
-        self.resume_button = ttk.Button(
-            self.main_frame,
-            text="Continue",
-            command=self.resume_forward,
-            state="disabled"
-        )
-        self.resume_button.grid(row=3, column=3, padx=5, pady=5, sticky="w")
-
-        self.fofa_button = ttk.Button(
-            self.main_frame,
-            text="3) Hunt With FOFA",
-            style="Fofa.TButton",
-            command=self.run_fofa_hunt
-        )
-        self.fofa_button.grid(row=3, column=4, padx=5, pady=5, sticky="w")
-
-        self.urlscan_button = ttk.Button(
-            self.main_frame,
-            text="4) Hunt With URLScan",
-            style="Fofa.TButton",
-            command=self.run_urlscan_hunt
-        )
-        self.urlscan_button.grid(row=3, column=5, padx=5, pady=5, sticky="w")
-
-        self.log_frame = ttk.LabelFrame(self.main_frame, text="Process Log")
-        self.log_frame.grid(row=4, column=0, columnspan=6, sticky="nsew", padx=5, pady=5)
-        self.main_frame.grid_rowconfigure(4, weight=1)
-        self.main_frame.grid_columnconfigure(1, weight=1)
-
-        self.log_text = ScrolledText(self.log_frame, width=75, height=15, state="disabled")
-        self.log_text.pack(fill="both", expand=True, padx=5, pady=5)
-
-        self.log_text.tag_config("token_tag", font=("Arial", 10, "bold italic"), foreground="black")
-        self.log_text.tag_config("chatid_tag", font=("Arial", 10, "bold italic"), foreground="black")
-
-        clear_logs_btn = ttk.Button(self.log_frame, text="Clear Logs", command=self.clear_logs)
-        clear_logs_btn.pack(side="right", anchor="e", pady=5)
-
-        export_logs_btn = ttk.Button(self.log_frame, text="Export Logs", command=self.export_logs)
-        export_logs_btn.pack(side="right", anchor="e", padx=5, pady=5)
-
+class matkap(QMainWindow):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("matkap")
+        self.setWindowIcon(QIcon("logo.png"))
+        self.setGeometry(200, 200, 1400, 800)
+        self.load_config()
         self.bot_token = None
         self.bot_username = None
         self.my_chat_id = None
         self.last_message_id = None
         self.stop_flag = False
         self.stopped_id = 0
-        self.current_msg_id = 0
-        self.max_older_attempts = 200
         self.session = requests.Session()
+        self.setup_ui()
+        self.apply_theme(self.config.get('theme', 'Dark'))
 
+    def load_config(self):
+        default_config = {
+            "theme":"Dark",
+            "font_size":12,
+            "max_older_attempts":300,
+            "log_limit":1000,
+            "auto_scroll":True,
+            "telegram_phone":"",
+            "telegram_api_id":"",
+            "telegram_api_hash":"",
+            "fofa_email":"",
+            "fofa_key":"",
+            "urlscan_key":""
+        }
+        if os.path.exists(CONFIG_FILE):
+            with open(CONFIG_FILE, 'r') as f:
+                self.config = json.load(f)
+        else:
+            self.config = default_config
+            with open(CONFIG_FILE, 'w') as f:
+                json.dump(self.config, f, indent=4)
 
-    def export_logs(self):
-        logs = self.log_text.get("1.0", "end")
+    def setup_ui(self):
+        central = QWidget()
+        self.setCentralWidget(central)
+        main_layout = QVBoxLayout()
+        central.setLayout(main_layout)
+        header = QLabel("matkap | Hunt Down Malicious Telegram Bots")
+        header.setFont(QFont("Arial", 20, QFont.Bold))
+        header.setAlignment(Qt.AlignCenter)
+        main_layout.addWidget(header)
+        form = QHBoxLayout()
+        self.token_input = QLineEdit()
+        self.token_input.setPlaceholderText("Bot Token")
+        form.addWidget(self.token_input)
+        self.chat_id_input = QLineEdit()
+        self.chat_id_input.setPlaceholderText("Chat ID")
+        form.addWidget(self.chat_id_input)
+        self.infiltrate_btn = QPushButton("1) Start Attack")
+        self.infiltrate_btn.clicked.connect(lambda: threading.Thread(target=self._start_infiltration, daemon=True).start())
+        form.addWidget(self.infiltrate_btn)
+        self.forward_btn = QPushButton("2) Forward All")
+        self.forward_btn.clicked.connect(lambda: threading.Thread(target=self.forward_continuation, args=(self.chat_id_input.text().strip(), 1), daemon=True).start())
+        form.addWidget(self.forward_btn)
+        self.stop_btn = QPushButton("⛔ Stop")
+        self.stop_btn.clicked.connect(self.stop_forwarding)
+        form.addWidget(self.stop_btn)
+        self.resume_btn = QPushButton("▶️ Resume")
+        self.resume_btn.clicked.connect(lambda: threading.Thread(target=self.forward_continuation, args=(self.chat_id_input.text().strip(), self.stopped_id + 1), daemon=True).start())
+        form.addWidget(self.resume_btn)
+        self.fofa_btn = QPushButton("Hunt FOFA")
+        self.fofa_btn.clicked.connect(lambda: threading.Thread(target=self._fofa_hunt_process, daemon=True).start())
+        form.addWidget(self.fofa_btn)
+        self.urlscan_btn = QPushButton("Hunt URLScan")
+        self.urlscan_btn.clicked.connect(lambda: threading.Thread(target=self._urlscan_hunt_process, daemon=True).start())
+        form.addWidget(self.urlscan_btn)
+        self.settings_btn = QPushButton("⚙️ Settings")
+        self.settings_btn.clicked.connect(self.open_settings_dialog)
+        form.addWidget(self.settings_btn)
+        main_layout.addLayout(form)
+        self.log_area = QTextEdit()
+        self.log_area.setReadOnly(True)
+        main_layout.addWidget(self.log_area)
+        log_ctrl = QHBoxLayout()
+        self.clear_btn = QPushButton("Clear Logs")
+        self.clear_btn.clicked.connect(self.clear_logs)
+        log_ctrl.addWidget(self.clear_btn)
+        self.export_btn = QPushButton("Export Logs")
+        self.export_btn.clicked.connect(self.export_logs)
+        log_ctrl.addWidget(self.export_btn)
+        main_layout.addLayout(log_ctrl)
+
+    def apply_theme(self, theme):
+        if theme == 'Dark':
+            sheet = """
+                QWidget { background-color: #1e1e1e; color: #fff; }
+                QLineEdit, QTextEdit { background-color: #2d2d2d; }
+                QPushButton { background-color: #444; }
+            """
+        else:
+            sheet = """
+                QWidget { background-color: #fff; color: #000; }
+                QLineEdit, QTextEdit { background-color: #f2f2f2; }
+                QPushButton { background-color: #e1e1e1; }
+            """
+        self.setStyleSheet(sheet)
+
+    def log(self, msg):
+        self.log_area.append(msg)
+        if self.config.get('auto_scroll', True):
+            sb = self.log_area.verticalScrollBar()
+            sb.setValue(sb.maximum())
+
+    def open_settings_dialog(self):
+        dlg = SettingsDialog(self.config, self)
+        if dlg.exec():
+            self.load_config()
+            self.apply_theme(self.config.get('theme', 'Dark'))
+
+    def parse_bot_token(self, raw):
+        return raw[3:] if raw.lower().startswith('bot') else raw
+
+    def get_me(self, token):
         try:
-            with open("logs.txt", "w", encoding="utf-8") as f:
-                f.write(logs)
-            messagebox.showinfo("Export Logs", "Logs have been exported to 'logs.txt'.")
-        except Exception as e:
-            messagebox.showerror("Export Error", f"Failed to export logs!\n{e}")
-
-    def run_fofa_hunt(self):
-        thread = threading.Thread(target=self._fofa_hunt_process)
-        thread.start()
-
-    def _fofa_hunt_process(self):
-        self.log("🔎 Starting FOFA hunt for body='api.telegram.org' ...")
-        results = fofa_api.search_fofa_and_hunt()
-        if not results:
-            self.log("⚠️ No FOFA results or an error occurred!")
-            return
-        for (site_or_err, tokens, chats) in results:
-            if site_or_err.startswith("Error") or site_or_err.startswith("FOFA"):
-                self.log(f"🚫 {site_or_err}")
-                continue
-            if site_or_err.startswith("No results"):
-                self.log("⚠️ No FOFA results found.")
-                continue
-            self.log(f"✨ Found: {site_or_err}")
-            if tokens:
-                self.log_text.configure(state="normal")
-                self.log_text.insert("end", "   🪄 Tokens: ")
-                for i, token in enumerate(tokens):
-                    self.log_text.insert("end", token, "token_tag")
-                    if i < len(tokens) - 1:
-                        self.log_text.insert("end", ", ")
-                self.log_text.insert("end", "\n")
-                self.log_text.configure(state="disabled")
-            if chats:
-                self.log_text.configure(state="normal")
-                self.log_text.insert("end", "   Potential Chat IDs: ")
-                for i, chatid in enumerate(chats):
-                    self.log_text.insert("end", chatid, "chatid_tag")
-                    if i < len(chats) - 1:
-                        self.log_text.insert("end", ", ")
-                self.log_text.insert("end", "\n")
-                self.log_text.configure(state="disabled")
-        self.log("📝 FOFA hunt finished.")
-
-    def run_urlscan_hunt(self):
-        thread = threading.Thread(target=self._urlscan_hunt_process)
-        thread.start()
-
-    def _urlscan_hunt_process(self):
-        self.log("🔎 Starting URLScan hunt for domain:api.telegram.org ...")
-        results = urlscan_api.search_urlscan_and_hunt()
-        if not results:
-            self.log("⚠️ No URLScan results or an error occurred!")
-            return
-        for (site_or_err, tokens, chats) in results:
-            if site_or_err.startswith("Error"):
-                self.log(f"🚫 {site_or_err}")
-                continue
-            if site_or_err.startswith("No results"):
-                self.log("⚠️ No URLScan results found.")
-                continue
-            self.log(f"✨ Found: {site_or_err}")
-            if tokens:
-                self.log_text.configure(state="normal")
-                self.log_text.insert("end", "   🪄 Tokens: ")
-                for i, token in enumerate(tokens):
-                    self.log_text.insert("end", token, "token_tag")
-                    if i < len(tokens) - 1:
-                        self.log_text.insert("end", ", ")
-                self.log_text.insert("end", "\n")
-                self.log_text.configure(state="disabled")
-            if chats:
-                self.log_text.configure(state="normal")
-                self.log_text.insert("end", "   Potential Chat IDs: ")
-                for i, chatid in enumerate(chats):
-                    self.log_text.insert("end", chatid, "chatid_tag")
-                    if i < len(chats) - 1:
-                        self.log_text.insert("end", ", ")
-                self.log_text.insert("end", "\n")
-                self.log_text.configure(state="disabled")
-        self.log("📝 URLScan hunt finished.")
-
-    def configure_theme(self, theme_name):
-        theme_info = self.themes[theme_name]
-        bg = theme_info["bg"]
-        fg = theme_info["fg"]
-        self.style.configure(".", background=bg, foreground=fg)
-        self.style.configure("TLabel", background=bg, foreground=fg)
-        self.style.configure("TButton", background=bg, foreground=fg)
-        self.style.configure("TLabelframe", background=bg, foreground=fg)
-        self.style.configure("TLabelframe.Label", background=bg, foreground=fg)
-        self.style.configure("TEntry", fieldbackground="#FFFFFF", foreground="#000000")
-
-    def switch_theme(self, event):
-        selected_theme = self.theme_combo.get()
-        if selected_theme in self.themes:
-            self.current_theme = selected_theme
-            self.configure_theme(selected_theme)
-            self.header_frame.config(bg=self.themes[self.current_theme]["header_bg"])
-            self.header_label.config(bg=self.themes[self.current_theme]["header_bg"],
-                                     fg=self.themes[self.current_theme]["fg"])
-            self.main_frame.config(bg=self.themes[self.current_theme]["main_bg"])
-            self.log(f"🌀 Switched theme to: {selected_theme}")
-
-    def clear_logs(self):
-        self.log_text.configure(state="normal")
-        self.log_text.delete("1.0", "end")
-        self.log_text.configure(state="disabled")
-
-    def add_placeholder(self, entry_widget, placeholder_text):
-        def on_focus_in(event):
-            if entry_widget.get() == placeholder_text:
-                entry_widget.delete(0, "end")
-                entry_widget.configure(foreground="black")
-        def on_focus_out(event):
-            if entry_widget.get().strip() == "":
-                entry_widget.insert(0, placeholder_text)
-                entry_widget.configure(foreground="grey")
-        entry_widget.insert(0, placeholder_text)
-        entry_widget.configure(foreground="grey")
-        entry_widget.bind("<FocusIn>", on_focus_in)
-        entry_widget.bind("<FocusOut>", on_focus_out)
-
-    def log(self, message):
-        self.log_text.configure(state="normal")
-        self.log_text.insert("end", message + "\n")
-        self.log_text.see("end")
-        self.log_text.configure(state="disabled")
-
-    def save_message_to_file(self, chat_id, message_content):
-        if message_content:
-            os.makedirs("captured_messages", exist_ok=True)
-            
-            safe_token = self.bot_token.split(":")[0] if self.bot_token else "unknown"
-            filename = os.path.join("captured_messages", f"bot_{safe_token}_chat_{chat_id}_data.txt")
-            
-            if not os.path.exists(filename):
-                try:
-                    with open(filename, "w", encoding="utf-8") as f:
-                        f.write("=== Bot Information ===\n")
-                        f.write(f"Bot Token: {self.bot_token}\n")
-                        f.write(f"Bot Username: @{self.bot_username}\n")
-                        f.write(f"Chat ID: {chat_id}\n")
-                        f.write(f"Last Message ID: {self.last_message_id}\n")
-                        f.write("\n=== Captured Messages ===\n\n")
-                except Exception as e:
-                    self.log(f"❌ Error creating file header: {e}")
-                    return False
-            
-            try:
-                with open(filename, "a", encoding="utf-8") as f:
-                    f.write(f"\n--- Message ID: {message_content['message_id']} ---\n")
-                    f.write(f"Date: {message_content['date']}\n")
-                    if message_content['text']:
-                        f.write(f"Text: {message_content['text']}\n")
-                    if message_content['caption']:
-                        f.write(f"Caption: {message_content['caption']}\n")
-                    if message_content['file_id']:
-                        f.write(f"File ID: {message_content['file_id']}\n")
-                    f.write("----------------------------------------\n")
-                return True
-            except Exception as e:
-                self.log(f"❌ Save to file error: {e}")
-                return False
-        return False
-
-    def stop_forwarding(self):
-        self.stop_flag = True
-        self.log("➡️ [Stop Button] Stop request sent.")
-        self.resume_button.config(state="normal")
-        
-        try:
-            from_chat_id = self.chatid_entry.get().strip()
-            if from_chat_id and not "Example:" in from_chat_id:
-                safe_token = self.bot_token.split(":")[0] if self.bot_token else "unknown"
-                filename = os.path.join("captured_messages", f"bot_{safe_token}_chat_{from_chat_id}_data.txt")
-                
-                if os.path.exists(filename):
-                    self.log(f"📝 Messages saved in: {filename}")
-                    messagebox.showinfo("Data Saved", f"All messages have been saved to: {os.path.basename(filename)}")
-        except Exception as e:
-            self.log(f"❌ Error accessing data file: {e}")
-
-    def resume_forward(self):
-        self.log(f"▶️ [Resume] Resuming from ID {self.stopped_id + 1}")
-        self.stop_flag = False
-        self.resume_button.config(state="disabled")
-        from_chat_id = self.chatid_entry.get().strip()
-        if not from_chat_id or "Example:" in from_chat_id:
-            messagebox.showerror("Error", "Malicious Chat ID is empty!")
-            return
-        self.forward_continuation(from_chat_id, start_id=self.stopped_id + 1)
-
-    def parse_bot_token(self, raw_token):
-        raw_token = raw_token.strip()
-        if raw_token.lower().startswith("bot"):
-            raw_token = raw_token[3:]
-        return raw_token
-
-    def get_me(self, bot_token):
-        webhook_info = requests.get(f"{TELEGRAM_API_URL}{bot_token}/getWebhookInfo").json()
-        if webhook_info.get("ok") and webhook_info["result"].get("url"):
-            requests.get(f"{TELEGRAM_API_URL}{bot_token}/deleteWebhook")
-        url = f"{TELEGRAM_API_URL}{bot_token}/getMe"
-        try:
-            r = requests.get(url)
-            data = r.json()
-            if data.get("ok"):
-                return data["result"]
+            d = requests.get(f"{TELEGRAM_API_URL}{token}/getWebhookInfo").json()
+            if d.get('ok') and d['result'].get('url'):
+                requests.get(f"{TELEGRAM_API_URL}{token}/deleteWebhook")
+            info = requests.get(f"{TELEGRAM_API_URL}{token}/getMe").json()
+            if info.get('ok'):
+                return info['result']
             else:
-                self.log(f"[getMe] Error: {data}")
+                self.log(f"[getMe] Error: {info}")
                 return None
         except Exception as e:
             self.log(f"[getMe] Req error: {e}")
@@ -423,7 +245,8 @@ class TelegramGUI:
 
     async def telethon_send_start(self, bot_username):
         try:
-            await client.start(phone_number)
+            client = TelegramClient('anon_session', int(self.config['telegram_api_id']), self.config['telegram_api_hash'], app_version='9.4.0')
+            await client.start(self.config['telegram_phone'])
             self.log("✅ [Telethon] Logged in with your account.")
             if not bot_username.startswith("@"):
                 bot_username = "@" + bot_username
@@ -433,218 +256,205 @@ class TelegramGUI:
         except Exception as e:
             self.log(f"❌ [Telethon] Send error: {e}")
 
-    def get_updates(self, bot_token):
-        url = f"{TELEGRAM_API_URL}{bot_token}/getUpdates"
+    def get_updates(self, token):
         try:
-            r = requests.get(url)
-            data = r.json()
-            if data.get("ok") and data["result"]:
-                last_update = data["result"][-1]
-                msg = last_update["message"]
-                my_chat_id = msg["chat"]["id"]
-                last_message_id = msg["message_id"]
-                self.log(f"[getUpdates] my_chat_id={my_chat_id}, last_msg_id={last_message_id}")
-                return my_chat_id, last_message_id
-            else:
-                self.log(f"[getUpdates] no result: {data}")
-                return None, None
+            d = requests.get(f"{TELEGRAM_API_URL}{token}/getUpdates").json()
+            if d.get('ok') and d['result']:
+                last = d['result'][-1]['message']
+                return last['chat']['id'], last['message_id']
         except Exception as e:
             self.log(f"[getUpdates] error: {e}")
-            return None, None
+        return None, None
 
-    def get_message_content(self, bot_token, chat_id, message_id):
-        url = f"{TELEGRAM_API_URL}{bot_token}/getChat"
-        payload = {
-            "chat_id": chat_id
-        }
-        try:
-            r = requests.post(url, json=payload)
-            chat_data = r.json()
-            
-            url = f"{TELEGRAM_API_URL}{bot_token}/forwardMessage"
-            payload = {
-                "chat_id": self.my_chat_id,
-                "from_chat_id": chat_id,
-                "message_id": message_id
-            }
-            r = requests.post(url, json=payload)
-            data = r.json()
-            
-            if data.get("ok"):
-                message = data["result"]
-                content = {
-                    "message_id": message_id,
-                    "chat_id": chat_id,
-                    "date": message.get("date"),
-                    "text": message.get("text", ""),
-                    "caption": message.get("caption", ""),
-                    "file_id": None
-                }
-                
-                media_types = ["photo", "document", "video", "audio", "voice", "sticker"]
-                for media_type in media_types:
-                    if media_type in message:
-                        if isinstance(message[media_type], list):
-                            content["file_id"] = message[media_type][-1].get("file_id")
-                        else:
-                            content["file_id"] = message[media_type].get("file_id")
-                        break
-                
-                return content
-            return None
-        except Exception as e:
-            self.log(f"❌ Get message content error ID {message_id}: {e}")
-            return None
-        
-    def async_save_message_content(self, bot_token, chat_id, message_id):
-        message_content = self.get_message_content(bot_token, chat_id, message_id)
-        if message_content:
-            success = self.save_message_to_file(chat_id, message_content)
-            if success:
-                self.log(f"📝 [Async] Saved message ID {message_id} to file.")
-            else:
-                self.log(f"⚠️ [Async] Failed to save message ID {message_id}.")
-        else:
-            self.log(f"⚠️ [Async] Failed to retrieve content for message ID {message_id}.")
-
-
-    def forward_msg(self, bot_token, from_chat_id, to_chat_id, message_id):
-        url = f"{TELEGRAM_API_URL}{bot_token}/forwardMessage"
-        payload = {
-            "from_chat_id": from_chat_id,
-            "chat_id": to_chat_id,
-            "message_id": message_id
-        }
-        try:
-            r = self.session.post(url, json=payload)
-            data = r.json()
-            if data.get("ok"):
-                self.log(f"✅ Forwarded message ID {message_id}.")
-                threading.Thread(
-                    target=self.async_save_message_content, 
-                    args=(bot_token, from_chat_id, message_id), 
-                    daemon=True
-                ).start()
-                return True
-            else:
-                self.log(f"⚠️ Forward fail ID {message_id}, reason: {data}")
-                return False
-        except Exception as e:
-            self.log(f"❌ Forward error ID {message_id}: {e}")
-            return False
-
+    def _start_infiltration(self):
+        raw = self.token_input.text().strip()
+        if not raw:
+            self.log("Error: Bot Token required!")
+            return
+        token = self.parse_bot_token(raw)
+        info = self.get_me(token)
+        if not info:
+            self.log("Error: Invalid bot token")
+            return
+        bot_user = info.get('username')
+        self.log(f"[getMe] Bot validated: @{bot_user}")
+        self.bot_token = token
+        self.bot_username = bot_user
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        loop.run_until_complete(self.telethon_send_start(bot_user))
+        my_id, last_id = self.get_updates(token)
+        if not my_id or not last_id:
+            self.log("Error: getUpdates failed")
+            return
+        self.my_chat_id, self.last_message_id = my_id, last_id
+        self.log(f"[Infiltration] Chat={my_id}, LastMsg={last_id}")
+        attacker = self.chat_id_input.text().strip()
+        if attacker:
+            self.stop_flag = False
+            self.infiltration_process(attacker)
 
     def infiltration_process(self, attacker_id):
-        found_any = False
-        if self.last_message_id is None:
-            self.last_message_id = 0
-        start_id = self.last_message_id
-        stop_id = max(1, self.last_message_id - self.max_older_attempts)
-        self.log(f"Trying older IDs from {start_id} down to {stop_id}")
-        for test_id in range(start_id, stop_id - 1, -1):
+        start = self.last_message_id or 0
+        stop = max(1, start - self.config.get('max_older_attempts', 300))
+        self.log(f"Trying older IDs from {start} down to {stop}")
+        for mid in range(start, stop - 1, -1):
             if self.stop_flag:
-                self.log("⏹️ Infiltration older ID check stopped by user.")
+                self.log("⏹️ Infiltration stopped by user.")
                 return
-            success = self.forward_msg(self.bot_token, attacker_id, self.my_chat_id, test_id)
-            if success:
-                self.log(f"✅ First older message captured! ID={test_id}")
-                found_any = True
+            if self.forward_msg(self.bot_token, attacker_id, self.my_chat_id, mid):
+                self.log(f"✅ Captured older message ID {mid}")
                 break
             else:
-                self.log(f"Try next older ID {test_id-1}...")
-        if found_any:
-            self.log("Now you can forward all messages if needed.")
-        else:
-            self.log("No older ID worked within our limit. Possibly no older messages or limit insufficient.")
+                self.log(f"Try next older ID {mid - 1}...")
+        self.log("📝 Older ID check complete.")
 
-    def start_infiltration(self):
-        raw_token = self.token_entry.get().strip()
-        if not raw_token or "Example:" in raw_token:
-            messagebox.showerror("Error", "Bot Token cannot be empty!")
-            return
-        parsed_token = self.parse_bot_token(raw_token)
-        info = self.get_me(parsed_token)
-        if not info:
-            messagebox.showerror("Error", "getMe failed or not a valid bot token!")
-            return
-        bot_user = info.get("username", None)
-        if not bot_user:
-            messagebox.showerror("Error", "No username found in getMe result!")
-            return
-        self.log(f"[getMe] Bot validated: @{bot_user}")
-        messagebox.showinfo("getMe", f"Bot validated: @{bot_user}")
-        self.bot_token = parsed_token
-        self.bot_username = bot_user
-        loop = asyncio.get_event_loop()
-        loop.run_until_complete(self.telethon_send_start(bot_user))
-        my_id, last_id = self.get_updates(parsed_token)
-        if not my_id or not last_id:
-            messagebox.showerror("Error", "getUpdates gave no valid results.")
-            return
-        self.my_chat_id = my_id
-        self.last_message_id = last_id
-        info_msg = (
-            f"Bot username: @{bot_user}\n"
-            f"my_chat_id: {my_id}\n"
-            f"last_message_id: {last_id}\n\n"
-            "We will now try older IDs in a background thread..."
-        )
-        self.log("[Infiltration] " + info_msg.replace("\n", " | "))
-        messagebox.showinfo("Infiltration Complete", info_msg)
-        attacker_id = self.chatid_entry.get().strip()
-        if not attacker_id or "Example:" in attacker_id:
-            self.log("⚠️ No attacker chat ID provided. Skipping older ID check.")
-            return
-        self.stop_flag = False
-        t = threading.Thread(target=self.infiltration_process, args=(attacker_id,))
-        t.start()
-
-    def forward_all_messages(self):
-        if not self.bot_token or not self.bot_username or not self.my_chat_id or not self.last_message_id:
-            messagebox.showerror("Error", "You must do Infiltration Steps first!")
-            return
-        from_chat_id = self.chatid_entry.get().strip()
-        if not from_chat_id or "Example:" in from_chat_id:
-            messagebox.showerror("Error", "Malicious Chat ID is empty!")
-            return
-        self.stop_flag = False
-        self.stopped_id = 0
-        self.current_msg_id = 0
-        self.resume_button.config(state="disabled")
-        self.forward_continuation(from_chat_id, start_id=1)
-
-    def forward_continuation(self, attacker_chat_id, start_id):
-        def do_forward():
-            if self.last_message_id is None:
-                self.last_message_id = 0
-            max_id = self.last_message_id
-            success_count = 0
-            for msg_id in range(start_id, max_id + 1):
-                if self.stop_flag:
-                    self.stopped_id = msg_id
-                    self.root.after(0, lambda: self.log(f"⏹️ Stopped at ID {msg_id} by user."))
-                    break
-                ok = self.forward_msg(self.bot_token, attacker_chat_id, self.my_chat_id, msg_id)
-                if ok:
-                    success_count += 1
-            if not self.stop_flag:
-                txt = f"Forwarded from ID {start_id}..{max_id}, total success: {success_count}"
-                self.root.after(0, lambda: [
-                    self.log("[Result] " + txt.replace("\n", " | ")),
-                    messagebox.showinfo("Result", txt)
-                ])
+    def forward_msg(self, token, from_id, to_id, msg_id):
+        try:
+            r = self.session.post(f"{TELEGRAM_API_URL}{token}/forwardMessage", json={"from_chat_id": from_id, "chat_id": to_id, "message_id": msg_id}).json()
+            if r.get('ok'):
+                self.log(f"✅ Forwarded message ID {msg_id}.")
+                threading.Thread(target=self.async_save_message_to_file, args=(token, from_id, msg_id), daemon=True).start()
+                return True
             else:
-                partial_txt = (
-                    f"Stopped at ID {self.stopped_id}, total success: {success_count}.\n"
-                    "Resume if needed."
-                )
-                self.root.after(0, lambda: [
-                    self.log("[Result] " + partial_txt.replace("\n", " | "))
-                ])
-        t = threading.Thread(target=do_forward)
-        t.start()
+                self.log(f"⚠️ Forward fail ID {msg_id}, reason: {r}")
+        except Exception as e:
+            self.log(f"❌ Forward error ID {msg_id}: {e}")
+        return False
 
-if __name__ == "__main__":
-    root = tk.Tk()
-    app = TelegramGUI(root)
-    root.mainloop()
+    def forward_continuation(self, attacker_id, start_id):
+        success_count = 0
+        for mid in range(start_id, self.last_message_id + 1):
+            if self.stop_flag:
+                self.stopped_id = mid
+                self.log(f"⏹️ Stopped at ID {mid}")
+                return
+            if self.forward_msg(self.bot_token, attacker_id, self.my_chat_id, mid):
+                success_count += 1
+        self.log(f"📤 Forwarded {success_count} messages.")
+
+    def stop_forwarding(self):
+        self.stop_flag = True
+        self.log("➡️ Stop request sent.")
+
+    def resume_forward(self):
+        self.log(f"▶️ Resuming from ID {self.stopped_id + 1}")
+        self.stop_flag = False
+        threading.Thread(target=self.forward_continuation, args=(self.chat_id_input.text().strip(), self.stopped_id + 1), daemon=True).start()
+
+    def save_message_to_file(self, chat_id, content):
+        os.makedirs('captured_messages', exist_ok=True)
+        safe = self.bot_token.split(':')[0] if self.bot_token else 'unknown'
+        filename = os.path.join('captured_messages', f'bot_{safe}_chat_{chat_id}_data.txt')
+        header = not os.path.exists(filename)
+        try:
+            with open(filename, 'a', encoding='utf-8') as f:
+                if header:
+                    f.write("=== Bot Information ===\n")
+                    f.write(f"Bot Token: {self.bot_token}\n")
+                    f.write(f"Bot Username: @{self.bot_username}\n")
+                    f.write(f"Chat ID: {chat_id}\n")
+                    f.write(f"Last Message ID: {self.last_message_id}\n\n")
+                f.write(f"--- Message ID: {content['message_id']} ---\n")
+                f.write(f"Date: {content['date']}\n")
+                if content['text']:
+                    f.write(f"Text: {content['text']}\n")
+                if content['caption']:
+                    f.write(f"Caption: {content['caption']}\n")
+                if content['file_id']:
+                    f.write(f"File ID: {content['file_id']}\n")
+                f.write("----------------------------------------\n")
+            return True
+        except Exception as e:
+            self.log(f"❌ Save to file error: {e}")
+            return False
+
+    def get_message_content(self, token, chat_id, msg_id):
+        try:
+            r = self.session.post(f"{TELEGRAM_API_URL}{token}/forwardMessage", json={"chat_id": self.my_chat_id, "from_chat_id": chat_id, "message_id": msg_id})
+            msg = r.json().get('result', {})
+            return {
+                'message_id': msg_id,
+                'date': msg.get('date'),
+                'text': msg.get('text', ''),
+                'caption': msg.get('caption', ''),
+                'file_id': (msg.get('photo') or msg.get('document') or None)
+            }
+        except Exception as e:
+            self.log(f"❌ Get message content error ID {msg_id}: {e}")
+            return None
+
+    def async_save_message_to_file(self, token, chat_id, msg_id):
+        content = self.get_message_content(token, chat_id, msg_id)
+        if content and self.save_message_to_file(chat_id, content):
+            self.log(f"📝 [Async] Saved message ID {msg_id}.")
+        else:
+            self.log(f"⚠️ [Async] Failed to save message ID {msg_id}.")
+
+    def run_fofa_hunt(self):
+        threading.Thread(target=self._fofa_hunt_process, daemon=True).start()
+
+    def _fofa_hunt_process(self):
+        self.log("🔎 Starting FOFA hunt for body='api.telegram.org' ...")
+        email = self.config.get("fofa_email", "")
+        key = self.config.get("fofa_key", "")
+        results = fofa_api.search_fofa_and_hunt(email, key)
+        if not results:
+            self.log("🚫 FOFA API Error or no results")
+            self.log("📝 FOFA hunt finished.")
+            return
+        for site, toks, chats in results:
+            if site.startswith("Error"):
+                self.log(f"🚫 {site}")
+                continue
+            if site.startswith("No results"):
+                self.log("⚠️ No FOFA results found.")
+                continue
+            self.log(f"✨ Found: {site}")
+            if toks:
+                self.log("   🪄 Tokens: " + ", ".join(toks))
+            if chats:
+                self.log("   Potential Chat IDs: " + ", ".join(chats))
+        self.log("📝 FOFA hunt finished.")
+
+    def run_urlscan_hunt(self):
+        threading.Thread(target=self._urlscan_hunt_process, daemon=True).start()
+
+    def _urlscan_hunt_process(self):
+        self.log("🔎 Starting URLScan hunt for domain:api.telegram.org ...")
+        api_key = self.config.get("urlscan_key", "")
+        results = urlscan_api.search_urlscan_and_hunt(api_key)
+        if not results:
+            self.log("🚫 URLScan API Error or no results")
+            self.log("📝 URLScan hunt finished.")
+            return
+        for site, toks, chats in results:
+            if site.startswith("Error"):
+                self.log(f"🚫 {site}")
+                continue
+            if site.startswith("No results"):
+                self.log("⚠️ No URLScan results found.")
+                continue
+            self.log(f"✨ Found: {site}")
+            if toks:
+                self.log("   🪄 Tokens: " + ", ".join(toks))
+            if chats:
+                self.log("   Potential Chat IDs: " + ", ".join(chats))
+        self.log("📝 URLScan hunt finished.")
+
+    def clear_logs(self):
+        self.log_area.clear()
+
+    def export_logs(self):
+        try:
+            with open('logs.txt', 'w', encoding='utf-8') as f:
+                f.write(self.log_area.toPlainText())
+            QMessageBox.information(self, 'Export Logs', "Logs have been exported to 'logs.txt'.")
+        except Exception as e:
+            QMessageBox.critical(self, 'Error', str(e))
+
+if __name__ == '__main__':
+    app = QApplication(sys.argv)
+    window = matkap()
+    window.show()
+    sys.exit(app.exec())
