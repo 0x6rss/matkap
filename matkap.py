@@ -32,6 +32,72 @@ client = TelegramClient("anon_session", api_id, api_hash, app_version="9.4.0")
 
 TELEGRAM_API_URL = "https://api.telegram.org/bot"
 
+class ToolTip:
+    def __init__(self, widget, text):
+        self.widget = widget
+        self.text = text
+        self.tip_window = None
+        self.show_id = None
+
+        self.widget.bind("<Enter>", self.schedule_show)
+        self.widget.bind("<Leave>", self.hide_tip)
+        self.widget.bind("<Motion>", self.reset_schedule)  # optional, reset delay on mouse move
+
+    def schedule_show(self, event=None):
+        # Schedule tooltip show after 250ms
+        self.cancel_scheduled()
+        self.show_id = self.widget.after(250, self.show_tip)
+
+    def reset_schedule(self, event=None):
+        # Reset tooltip delay if mouse is moving inside widget
+        self.schedule_show()
+
+    def cancel_scheduled(self):
+        if self.show_id:
+            self.widget.after_cancel(self.show_id)
+            self.show_id = None
+
+    def show_tip(self, event=None):
+        self.cancel_scheduled()
+        if self.tip_window or not self.text:
+            return
+
+        # Position tooltip just below the widget
+        x = self.widget.winfo_rootx()
+        y = self.widget.winfo_rooty() + self.widget.winfo_height()
+
+        screen_width = self.widget.winfo_screenwidth()
+        screen_height = self.widget.winfo_screenheight()
+
+        self.tip_window = tw = tk.Toplevel(self.widget)
+        tw.wm_overrideredirect(True)
+        tw.wm_attributes("-topmost", True)  # keep tooltip on top
+
+        label = tk.Label(
+            tw, text=self.text, justify="left",
+            background="#ffffe0", relief="solid", borderwidth=1,
+            font=("tahoma", "10", "normal")
+        )
+        label.pack(ipadx=1)
+
+        tw.update_idletasks()
+        tip_width = tw.winfo_width()
+        tip_height = tw.winfo_height()
+
+        # Adjust position to keep tooltip inside screen
+        if x + tip_width > screen_width:
+            x = screen_width - tip_width - 10
+        if y + tip_height > screen_height:
+            y = screen_height - tip_height - 10
+
+        tw.wm_geometry(f"+{x}+{y}")
+
+    def hide_tip(self, event=None):
+        self.cancel_scheduled()
+        if self.tip_window:
+            self.tip_window.destroy()
+            self.tip_window = None
+
 class TelegramGUI:
     def __init__(self, root):
         self.root = root
@@ -122,12 +188,14 @@ class TelegramGUI:
         self.token_entry = ttk.Entry(self.main_frame, width=45)
         self.token_entry.grid(row=1, column=1, padx=5, pady=5, sticky="ew")
         self.add_placeholder(self.token_entry, "Example: bot12345678:AsHy7q9QB755Lx4owv76xjLqZwHDcFf7CSE")
+        ToolTip(self.token_entry, "Paste the full Telegram bot token here.")
 
         self.chat_label = ttk.Label(self.main_frame, text="Malicious Chat ID (Forward):")
         self.chat_label.grid(row=2, column=0, sticky="w", padx=5, pady=5)
         self.chatid_entry = ttk.Entry(self.main_frame, width=45)
         self.chatid_entry.grid(row=2, column=1, padx=5, pady=5, sticky="ew")
         self.add_placeholder(self.chatid_entry, "Example: 123456789")
+        ToolTip(self.chatid_entry, "Paste the malicious chat ID here.")
 
         self.infiltrate_button = ttk.Button(
             self.main_frame,
@@ -135,6 +203,7 @@ class TelegramGUI:
             command=self.start_infiltration
         )
         self.infiltrate_button.grid(row=3, column=0, padx=5, pady=5, sticky="w")
+        ToolTip(self.infiltrate_button, "Starts the infiltration process using bot token.")
 
         self.forward_button = ttk.Button(
             self.main_frame,
@@ -142,6 +211,7 @@ class TelegramGUI:
             command=self.forward_all_messages
         )
         self.forward_button.grid(row=3, column=1, padx=5, pady=5, sticky="w")
+        ToolTip(self.forward_button, "Tries to forward all messages from attacker chat.")
 
         self.stop_button = ttk.Button(
             self.main_frame,
@@ -149,6 +219,7 @@ class TelegramGUI:
             command=self.stop_forwarding
         )
         self.stop_button.grid(row=3, column=2, padx=5, pady=5, sticky="w")
+        ToolTip(self.stop_button, "Stops the current forwarding operation.")
 
         self.resume_button = ttk.Button(
             self.main_frame,
@@ -157,6 +228,7 @@ class TelegramGUI:
             state="disabled"
         )
         self.resume_button.grid(row=3, column=3, padx=5, pady=5, sticky="w")
+        ToolTip(self.resume_button, "Resume forwarding from where it stopped.")
 
         self.fofa_button = ttk.Button(
             self.main_frame,
@@ -165,6 +237,7 @@ class TelegramGUI:
             command=self.run_fofa_hunt
         )
         self.fofa_button.grid(row=3, column=4, padx=5, pady=5, sticky="w")
+        ToolTip(self.fofa_button, "Scan for leaked bot tokens/chat IDs via FOFA API.")
 
         self.urlscan_button = ttk.Button(
             self.main_frame,
@@ -173,6 +246,7 @@ class TelegramGUI:
             command=self.run_urlscan_hunt
         )
         self.urlscan_button.grid(row=3, column=5, padx=5, pady=5, sticky="w")
+        ToolTip(self.urlscan_button, "Scan for leaked bot tokens/chat IDs via URLScan.")
 
         self.log_frame = ttk.LabelFrame(self.main_frame, text="Process Log")
         self.log_frame.grid(row=4, column=0, columnspan=6, sticky="nsew", padx=5, pady=5)
@@ -187,9 +261,11 @@ class TelegramGUI:
 
         clear_logs_btn = ttk.Button(self.log_frame, text="Clear Logs", command=self.clear_logs)
         clear_logs_btn.pack(side="right", anchor="e", pady=5)
+        ToolTip(clear_logs_btn, "Clear the current log messages from the log panel.")
 
         export_logs_btn = ttk.Button(self.log_frame, text="Export Logs", command=self.export_logs)
         export_logs_btn.pack(side="right", anchor="e", padx=5, pady=5)
+        ToolTip(export_logs_btn, "Exports the logs into a .txt file.")
 
         self.bot_token = None
         self.bot_username = None
