@@ -1,4 +1,6 @@
+pillow
+PySide6
+python-dotenv
+PyQt6
 requests
 telethon
-pillow
-python-dotenv
