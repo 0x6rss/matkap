@@ -1,0 +1,13 @@
+{
+    "theme": "Dark",
+    "font_size": 12,
+    "max_older_attempts": 300,
+    "log_limit": 1000,
+    "auto_scroll": true,
+    "telegram_phone": "+",
+    "telegram_api_id": "",
+    "telegram_api_hash": "",
+    "fofa_email": "",
+    "fofa_key": "",
+    "urlscan_key": ""
+}
