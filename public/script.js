@@ -888,6 +888,17 @@ const mcpScanJobProgressBar = document.getElementById('mcpScanJobProgressBar');
 const mcpScanJobMessage = document.getElementById('mcpScanJobMessage');
 const mcpScanJobProgress = document.getElementById('mcpScanJobProgress');
 const mcpScanJobMeta = document.getElementById('mcpScanJobMeta');
+const orcaSettings = document.getElementById('orcaSettings');
+const orcaCredentialState = document.getElementById('orcaCredentialState');
+const orcaApiKeyInput = document.getElementById('orcaApiKeyInput');
+const orcaSaveKeyBtn = document.getElementById('orcaSaveKeyBtn');
+const orcaClearKeyBtn = document.getElementById('orcaClearKeyBtn');
+const orcaModelSelect = document.getElementById('orcaModelSelect');
+const orcaModelTrigger = document.getElementById('orcaModelTrigger');
+const orcaModelValue = document.getElementById('orcaModelValue');
+const orcaModelList = document.getElementById('orcaModelList');
+const orcaRefreshModelsBtn = document.getElementById('orcaRefreshModelsBtn');
+const orcaModelHint = document.getElementById('orcaModelHint');
 
 let aiProviderState = [];
 let aiEnabledState = true;
@@ -896,6 +907,18 @@ let mcpScanJobId = '';
 let mcpScanPollTimer = null;
 let mcpScanRunning = false;
 let mcpConnectedCount = 0;
+
+const ORCA_PROVIDER_ID = 'orcarouter';
+const ORCA_MODEL_STORAGE_KEY = 'matkap-orcarouter-model';
+let orcaCredential = null;
+let orcaModels = [];
+let orcaCatalogMeta = null;
+let orcaModelsLoaded = false;
+let orcaModelsLoading = false;
+let orcaSelectedModel = localStorage.getItem(ORCA_MODEL_STORAGE_KEY) || '';
+// Monotonic guard: a slow catalog/credential response from an older provider
+// selection must never overwrite the current panel state.
+let orcaRequestGeneration = 0;
 
 const expectedMcpConnections = [
   { name: 'jadx', label: 'JADX MCP', detail: 'Open an APK in JADX', active: true },
@@ -979,10 +1002,13 @@ async function startMcpScan() {
   mcpScanRunning = true;
   syncMcpScanButton();
   try {
+    const payload = { provider };
+    const model = selectedOrcaModel();
+    if (model) payload.model = model;
     const response = await fetch('/api/mcp/scan', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ provider }),
+      body: JSON.stringify(payload),
     });
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || 'Could not start MCP investigation');
@@ -1067,6 +1093,133 @@ function selectedAiProviders() {
   return [...aiProviders.querySelectorAll('input[data-ai-provider]:checked')].map(input => input.value);
 }
 
+function orcaProviderSelected() {
+  return selectedAiProviders()[0] === ORCA_PROVIDER_ID;
+}
+
+function renderOrcaCredential(status) {
+  orcaCredential = status || null;
+  if (!orcaCredentialState) return;
+  const configured = status?.configured === true;
+  orcaCredentialState.textContent = configured ? `API key saved (${status.masked})` : 'No API key';
+  if (orcaClearKeyBtn) orcaClearKeyBtn.disabled = !configured;
+  if (orcaSaveKeyBtn) orcaSaveKeyBtn.disabled = false;
+}
+
+function setOrcaListOpen(open) {
+  if (!orcaModelList || !orcaModelTrigger) return;
+  const shouldOpen = Boolean(open) && orcaModels.length > 0;
+  orcaModelList.hidden = !shouldOpen;
+  orcaModelTrigger.setAttribute('aria-expanded', shouldOpen ? 'true' : 'false');
+}
+
+function renderOrcaModels(catalog) {
+  orcaCatalogMeta = catalog || null;
+  const models = Array.isArray(catalog?.models) ? catalog.models : [];
+  orcaModels = models;
+  let notice = '';
+  if (orcaSelectedModel && !models.some(model => model.id === orcaSelectedModel)) {
+    // Compatibility changed (provider/catalog refresh): clear the stale value
+    // instead of silently sending a model the gateway may no longer serve.
+    orcaSelectedModel = '';
+    localStorage.removeItem(ORCA_MODEL_STORAGE_KEY);
+    notice = 'The previously selected model is no longer available. Choose another model.';
+  }
+  if (!models.length) orcaSelectedModel = '';
+  if (!orcaSelectedModel && models.length) orcaSelectedModel = models[0].id;
+
+  if (orcaModelList) {
+    orcaModelList.replaceChildren();
+    for (const model of models) {
+      const item = document.createElement('li');
+      item.className = 'orca-select-option';
+      item.setAttribute('role', 'option');
+      item.dataset.modelId = model.id;
+      item.setAttribute('aria-selected', String(model.id === orcaSelectedModel));
+      item.textContent = model.name && model.name !== model.id ? `${model.id} — ${model.name}` : model.id;
+      orcaModelList.append(item);
+    }
+  }
+  if (orcaModelValue) {
+    orcaModelValue.textContent = models.length ? orcaSelectedModel : 'No compatible models';
+  }
+  if (orcaModelTrigger) orcaModelTrigger.disabled = !models.length;
+  if (!models.length) setOrcaListOpen(false);
+  if (orcaModelHint) {
+    const parts = [];
+    if (catalog?.source === 'live') parts.push(`${models.length} models from the live OrcaRouter catalog`);
+    else if (models.length) parts.push(`${models.length} verified fallback models — live catalog unavailable`);
+    else parts.push('No models available');
+    if (catalog?.degraded) parts.push('degraded');
+    const errorText = String(catalog?.error || '').trim();
+    if (errorText) parts.push(errorText);
+    if (notice) parts.push(notice);
+    orcaModelHint.textContent = parts.join(' · ');
+    orcaModelHint.classList.toggle('orca-degraded', Boolean(catalog?.degraded || errorText));
+  }
+}
+
+async function loadOrcaModels({ refresh = false } = {}) {
+  const generation = orcaRequestGeneration;
+  orcaModelsLoading = true;
+  if (orcaRefreshModelsBtn) orcaRefreshModelsBtn.disabled = true;
+  try {
+    const url = `/api/ai/models?provider=${ORCA_PROVIDER_ID}&capability=chat${refresh ? '&refresh=1' : ''}`;
+    const response = await fetch(url, { cache: 'no-store' });
+    const data = await response.json();
+    if (generation !== orcaRequestGeneration || !orcaProviderSelected()) return;
+    if (!response.ok) {
+      renderOrcaModels({ source: 'error', degraded: true, models: [], error: data.error || 'Model discovery failed.' });
+      return;
+    }
+    renderOrcaModels(data);
+  } catch (error) {
+    if (generation !== orcaRequestGeneration || !orcaProviderSelected()) return;
+    renderOrcaModels({ source: 'error', degraded: true, models: [], error: 'Could not reach the OrcaRouter model catalog.' });
+  } finally {
+    orcaModelsLoading = false;
+    if (orcaRefreshModelsBtn) orcaRefreshModelsBtn.disabled = false;
+  }
+}
+
+async function loadOrcaCredential() {
+  const generation = orcaRequestGeneration;
+  try {
+    const response = await fetch('/api/orcarouter/credential', { cache: 'no-store' });
+    const data = await response.json();
+    if (generation !== orcaRequestGeneration || !orcaProviderSelected()) return;
+    if (!response.ok) throw new Error(data.error || 'Could not read the OrcaRouter credential state.');
+    renderOrcaCredential(data);
+  } catch (error) {
+    if (generation !== orcaRequestGeneration || !orcaProviderSelected()) return;
+    if (orcaCredentialState) orcaCredentialState.textContent = 'Status unavailable';
+  }
+}
+
+async function loadOrcaSettings({ refreshModels = false } = {}) {
+  orcaRequestGeneration += 1;
+  orcaModelsLoaded = true;
+  await Promise.all([loadOrcaCredential(), loadOrcaModels({ refresh: refreshModels })]);
+}
+
+function syncOrcaPanel() {
+  if (!orcaSettings) return;
+  const active = orcaProviderSelected();
+  orcaSettings.hidden = !active;
+  if (active) {
+    if (!orcaModelsLoaded && !orcaModelsLoading) void loadOrcaSettings();
+    return;
+  }
+  // Leaving the provider invalidates in-flight responses for its panel.
+  orcaRequestGeneration += 1;
+  setOrcaListOpen(false);
+}
+
+function selectedOrcaModel() {
+  if (!orcaProviderSelected()) return '';
+  return orcaModels.some(model => model.id === orcaSelectedModel) ? orcaSelectedModel : '';
+}
+
 function renderAiProviders(data = {}) {
   if (!aiProviders) return;
   const previouslySelected = new Set(selectedAiProviders());
@@ -1074,18 +1227,22 @@ function renderAiProviders(data = {}) {
   aiEnabledState = data.enabled !== false;
   aiPrimaryProvider = data.primary || 'openai';
   const configured = aiProviderState.filter(provider => provider.configured);
+  // OrcaRouter stays selectable without a key so its settings panel (API-key
+  // entry, model list) is reachable from the UI.
+  const selectable = aiProviderState.filter(provider => provider.configured || provider.id === ORCA_PROVIDER_ID);
   if (!previouslySelected.size) {
-    previouslySelected.add(configured.find(provider => provider.id === aiPrimaryProvider)?.id || configured[0]?.id);
+    previouslySelected.add(selectable.find(provider => provider.id === aiPrimaryProvider)?.id || selectable[0]?.id);
   }
-  const selected = [...previouslySelected].find(id => configured.some(provider => provider.id === id))
-    || configured.find(provider => provider.id === aiPrimaryProvider)?.id
-    || configured[0]?.id;
+  const selected = [...previouslySelected].find(id => selectable.some(provider => provider.id === id))
+    || selectable.find(provider => provider.id === aiPrimaryProvider)?.id
+    || selectable[0]?.id;
   aiProviders.innerHTML = aiProviderState.map(provider => {
-    const checked = provider.configured && selected === provider.id;
+    const enabled = provider.configured || provider.id === ORCA_PROVIDER_ID;
+    const checked = enabled && selected === provider.id;
     return `
-      <label class="mcp-ai-provider ${provider.configured ? '' : 'unconfigured'}" title="${escapeHtml(provider.model)}">
+      <label class="mcp-ai-provider ${enabled ? '' : 'unconfigured'}" title="${escapeHtml(provider.model)}">
         <input type="radio" name="mcp-ai-provider" data-ai-provider value="${escapeHtml(provider.id)}"
-          ${checked ? 'checked' : ''} ${provider.configured && aiEnabledState ? '' : 'disabled'}>
+          ${checked ? 'checked' : ''} ${enabled && aiEnabledState ? '' : 'disabled'}>
         <span class="mcp-ai-provider-copy">${escapeHtml(provider.label)}</span>
       </label>`;
   }).join('');
@@ -1096,6 +1253,7 @@ function renderAiProviders(data = {}) {
         ? `${configured.length} provider${configured.length === 1 ? '' : 's'} ready`
         : 'Add an API key to .env';
   }
+  syncOrcaPanel();
   syncMcpScanButton();
 }
 
@@ -1171,7 +1329,96 @@ if (mcpClearBtn) {
 }
 
 if (aiProviders) {
-  aiProviders.addEventListener('change', syncMcpScanButton);
+  aiProviders.addEventListener('change', () => {
+    syncOrcaPanel();
+    syncMcpScanButton();
+  });
+}
+
+function selectOrcaModel(modelId) {
+  if (!orcaModels.some(model => model.id === modelId)) return;
+  orcaSelectedModel = modelId;
+  localStorage.setItem(ORCA_MODEL_STORAGE_KEY, modelId);
+  if (orcaModelValue) orcaModelValue.textContent = modelId;
+  if (orcaModelList) {
+    for (const option of orcaModelList.querySelectorAll('[data-model-id]')) {
+      option.setAttribute('aria-selected', String(option.dataset.modelId === modelId));
+    }
+  }
+  setOrcaListOpen(false);
+}
+
+if (orcaModelTrigger) {
+  orcaModelTrigger.addEventListener('click', () => {
+    setOrcaListOpen(orcaModelList?.hidden !== false);
+  });
+}
+
+if (orcaModelList) {
+  orcaModelList.addEventListener('click', event => {
+    const option = event.target.closest('[data-model-id]');
+    if (option) selectOrcaModel(option.dataset.modelId);
+  });
+}
+
+document.addEventListener('click', event => {
+  if (!orcaModelSelect || orcaModelSelect.contains(event.target)) return;
+  setOrcaListOpen(false);
+});
+
+document.addEventListener('keydown', event => {
+  if (event.key === 'Escape') setOrcaListOpen(false);
+});
+
+if (orcaRefreshModelsBtn) {
+  orcaRefreshModelsBtn.addEventListener('click', () => {
+    void loadOrcaModels({ refresh: true });
+  });
+}
+
+if (orcaSaveKeyBtn) {
+  orcaSaveKeyBtn.addEventListener('click', async () => {
+    const apiKey = String(orcaApiKeyInput?.value || '').trim();
+    if (!apiKey) return showAlert('Enter an OrcaRouter API key first', 'warning');
+    orcaSaveKeyBtn.disabled = true;
+    try {
+      const response = await fetch('/api/orcarouter/credential', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ apiKey }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Could not save the OrcaRouter API key.');
+      if (orcaApiKeyInput) orcaApiKeyInput.value = '';
+      renderOrcaCredential(data);
+      await loadOrcaModels({ refresh: true });
+      await loadMcpDashboard();
+      showAlert('OrcaRouter API key saved', 'success');
+    } catch (error) {
+      showAlert(error.message || 'Could not save the OrcaRouter API key.', 'error');
+    } finally {
+      if (orcaSaveKeyBtn) orcaSaveKeyBtn.disabled = false;
+    }
+  });
+}
+
+if (orcaClearKeyBtn) {
+  orcaClearKeyBtn.addEventListener('click', async () => {
+    orcaClearKeyBtn.disabled = true;
+    try {
+      const response = await fetch('/api/orcarouter/credential', { method: 'DELETE' });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Could not clear the OrcaRouter API key.');
+      renderOrcaCredential(data);
+      await loadOrcaModels({ refresh: true });
+      await loadMcpDashboard();
+      showAlert('OrcaRouter API key cleared', 'success');
+    } catch (error) {
+      showAlert(error.message || 'Could not clear the OrcaRouter API key.', 'error');
+    } finally {
+      if (orcaClearKeyBtn) orcaClearKeyBtn.disabled = false;
+    }
+  });
 }
 
 if (mcpFindings) {

@@ -2578,7 +2578,7 @@
 
     .mcp-ai-providers {
       display: grid;
-      grid-template-columns: repeat(6, minmax(0, 1fr));
+      grid-template-columns: repeat(7, minmax(0, 1fr));
       gap: 6px;
       margin: 10px 0;
     }
@@ -2624,6 +2624,162 @@
     .mcp-ai-actions {
       justify-content: flex-start;
       margin-top: 4px;
+    }
+
+    .orca-settings {
+      margin: 10px 0 12px;
+      padding: 11px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--bg-panel, var(--bg-input));
+    }
+
+    .orca-settings[hidden] {
+      display: none;
+    }
+
+    .orca-settings-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+
+    .orca-settings-head h3 {
+      color: var(--text);
+      font-family: var(--mono);
+      font-size: 0.72rem;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    .orca-settings a {
+      color: var(--primary-bright, var(--primary));
+    }
+
+    .orca-credential-row,
+    .orca-model-row {
+      display: flex;
+      align-items: flex-end;
+      gap: 8px;
+      margin-top: 8px;
+    }
+
+    .orca-field {
+      display: flex;
+      flex: 1 1 auto;
+      flex-direction: column;
+      gap: 4px;
+      min-width: 0;
+    }
+
+    .orca-field > span {
+      color: var(--text-muted);
+      font-family: var(--mono);
+      font-size: 0.55rem;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }
+
+    .orca-field input,
+    .orca-field select {
+      width: 100%;
+      min-height: 32px;
+      padding: 6px 8px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      background: var(--bg-input);
+      font-family: var(--mono);
+      font-size: 0.66rem;
+    }
+
+    .orca-field select {
+      cursor: pointer;
+    }
+
+    .orca-credential-row .btn,
+    .orca-model-row .btn {
+      flex: 0 0 auto;
+      min-height: 32px;
+    }
+
+    .orca-select {
+      position: relative;
+    }
+
+    .orca-select-trigger {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      width: 100%;
+      gap: 8px;
+      min-height: 32px;
+      padding: 6px 8px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      background: var(--bg-input);
+      font-family: var(--mono);
+      font-size: 0.66rem;
+      text-align: left;
+      cursor: pointer;
+    }
+
+    .orca-select-trigger:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+    }
+
+    .orca-select-trigger > span:first-child {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .orca-select-caret {
+      flex: 0 0 auto;
+      color: var(--text-muted);
+    }
+
+    .orca-select-list {
+      position: absolute;
+      z-index: 60;
+      top: calc(100% + 4px);
+      right: 0;
+      left: 0;
+      max-height: 240px;
+      margin: 0;
+      padding: 4px;
+      overflow-y: auto;
+      list-style: none;
+      border: 1px solid var(--border-strong);
+      border-radius: 8px;
+      background: #0b111b;
+      box-shadow: 0 16px 32px rgba(0, 0, 0, 0.55);
+    }
+
+    .orca-select-list[hidden] {
+      display: none;
+    }
+
+    .orca-select-option {
+      padding: 6px 8px;
+      border-radius: 5px;
+      color: var(--text-soft);
+      font-family: var(--mono);
+      font-size: 0.64rem;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      cursor: pointer;
+    }
+
+    .orca-select-option:hover,
+    .orca-select-option[aria-selected="true"] {
+      color: var(--text);
+      background: var(--bg-hover);
     }
 
     .threat-stats-panel {
@@ -3950,6 +4106,40 @@
                   token and chat ID. The sample itself never passes through MATKAP.
               </p>
               <div id="aiProviders" class="mcp-ai-providers" aria-label="AI provider"></div>
+              <div id="orcaSettings" class="orca-settings" hidden>
+                <div class="orca-settings-head">
+                  <h3>OrcaRouter settings</h3>
+                  <span id="orcaCredentialState" class="mcp-ai-state">No API key</span>
+                </div>
+                <p class="mcp-ai-note">
+                  OrcaRouter is an OpenAI-compatible AI gateway. The key stays on this server and is written to
+                  <code>.env</code>; it is never returned to the browser.
+                  <a href="https://www.orcarouter.ai/console/api-keys" target="_blank" rel="noreferrer noopener">Get a key</a>
+                </p>
+                <div class="orca-credential-row">
+                  <label class="orca-field" for="orcaApiKeyInput">
+                    <span>API key</span>
+                    <input id="orcaApiKeyInput" type="password" autocomplete="off" spellcheck="false" placeholder="sk-orca-…">
+                  </label>
+                  <button id="orcaSaveKeyBtn" class="btn btn-secondary" type="button">Save key</button>
+                  <button id="orcaClearKeyBtn" class="btn btn-secondary" type="button">Clear</button>
+                </div>
+                <div class="orca-model-row">
+                  <div class="orca-field">
+                    <span>Model</span>
+                    <div class="orca-select" id="orcaModelSelect">
+                      <button id="orcaModelTrigger" class="orca-select-trigger" type="button"
+                        aria-haspopup="listbox" aria-expanded="false" aria-controls="orcaModelList">
+                        <span id="orcaModelValue">Loading…</span>
+                        <span class="orca-select-caret" aria-hidden="true">▾</span>
+                      </button>
+                      <ul id="orcaModelList" class="orca-select-list" role="listbox" aria-label="OrcaRouter models" hidden></ul>
+                    </div>
+                  </div>
+                  <button id="orcaRefreshModelsBtn" class="btn btn-secondary" type="button">Refresh models</button>
+                </div>
+                <p id="orcaModelHint" class="mcp-ai-note" role="status">Loading the OrcaRouter model catalog…</p>
+              </div>
               <label class="mcp-ai-provider">
                 <input id="mcpAiFallback" type="checkbox">
                 <span class="mcp-ai-provider-copy">Use AI fallback after local scan</span>

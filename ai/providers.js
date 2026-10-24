@@ -1,6 +1,7 @@
 import fetch from "node-fetch";
+import { resolveOrcaRouterApiBase } from "./orcarouter.js";
 
-export const AI_PROVIDER_IDS = ["openai", "anthropic", "gemini", "xai", "kimi", "deepseek"];
+export const AI_PROVIDER_IDS = ["openai", "anthropic", "gemini", "xai", "kimi", "deepseek", "orcarouter"];
 
 export const FINDING_SCHEMA = {
   type: "object",
@@ -84,6 +85,18 @@ const PROVIDERS = {
     defaultBase: "https://api.deepseek.com",
     transport: "chat_completions",
   },
+  orcarouter: {
+    label: "OrcaRouter",
+    keyNames: ["ORCAROUTER_API_KEY", "ORCA_API_KEY"],
+    modelEnv: "ORCAROUTER_MODEL",
+    defaultModel: "orcarouter/auto",
+    // OrcaRouter's OpenAI-compatible relay. An explicit override wins; the
+    // shared ORCA_BASE_URL covers single-origin self-hosted deployments.
+    baseEnv: "ORCAROUTER_BASE_URL",
+    baseNames: ["ORCAROUTER_BASE_URL", "ORCAROUTER_API_BASE_URL", "ORCA_BASE_URL"],
+    defaultBase: "https://api.orcarouter.ai/v1",
+    transport: "chat_completions",
+  },
 };
 
 function valueFrom(env, names) {
@@ -101,12 +114,13 @@ function trimBaseUrl(value) {
 export function getProviderConfig(id, env = process.env) {
   const definition = PROVIDERS[id];
   if (!definition) return null;
+  const baseNames = definition.baseNames || [definition.baseEnv];
   return {
     id,
     label: definition.label,
     apiKey: valueFrom(env, definition.keyNames),
     model: String(env[definition.modelEnv] || definition.defaultModel).trim(),
-    baseUrl: trimBaseUrl(env[definition.baseEnv] || definition.defaultBase),
+    baseUrl: trimBaseUrl(valueFrom(env, baseNames) || definition.defaultBase),
     transport: definition.transport,
   };
 }
@@ -188,7 +202,10 @@ async function postJson(url, headers, body, options = {}) {
     }
     if (!response.ok) {
       const message = data?.error?.message || data?.error || raw || `HTTP ${response.status}`;
-      throw new Error(`Provider request failed (${response.status}): ${String(message).slice(0, 500)}`);
+      throw Object.assign(
+        new Error(`Provider request failed (${response.status}): ${String(message).slice(0, 500)}`),
+        { status: response.status }
+      );
     }
     return data;
   } catch (error) {
@@ -308,7 +325,12 @@ async function callGemini(config, prompt, options, request) {
 
 async function callChatCompletions(config, prompt, options, request) {
   const settings = requestConfig(request);
-  const format = config.id === "kimi" ? responseFormat(settings.schema, settings.schemaName) : { type: "json_object" };
+  // OrcaRouter is an OpenAI-compatible gateway: request plain JSON mode and let
+  // parseJsonOutput accept fences/preamble from models without strict schema
+  // support. Kimi keeps its native json_schema support.
+  const format = config.id === "kimi"
+    ? responseFormat(settings.schema, settings.schemaName)
+    : { type: "json_object" };
   const body = {
     model: config.model,
     messages: [
@@ -329,16 +351,45 @@ async function callChatCompletions(config, prompt, options, request) {
 }
 
 export async function generateProviderJson(providerId, request, options = {}) {
-  const config = getProviderConfig(providerId, options.env || process.env);
+  const env = options.env || process.env;
+  const config = getProviderConfig(providerId, env);
   if (!config) throw new Error(`Unknown AI provider: ${providerId}`);
-  if (!config.apiKey) throw new Error(`${config.label} is not configured.`);
+  if (!config.apiKey) {
+    throw new Error(providerId === "orcarouter"
+      ? "OrcaRouter is not configured. Add an OrcaRouter API key in the OrcaRouter provider settings."
+      : `${config.label} is not configured.`);
+  }
+  if (providerId === "orcarouter") {
+    // Keep the explicit-origin policy in one place for both inference and
+    // model discovery.
+    config.baseUrl = resolveOrcaRouterApiBase(env);
+  }
+  const requestedModel = String(options.model || "").trim();
+  if (requestedModel) {
+    if (!/^[A-Za-z0-9._:@/-]{1,200}$/.test(requestedModel)) throw new Error("Invalid model identifier.");
+    config.model = requestedModel;
+  }
   const prompt = String(request?.prompt || "");
   let result;
-  if (providerId === "openai") result = await callOpenAi(config, prompt, options, request);
-  else if (providerId === "xai") result = await callXai(config, prompt, options, request);
-  else if (providerId === "anthropic") result = await callAnthropic(config, prompt, options, request);
-  else if (providerId === "gemini") result = await callGemini(config, prompt, options, request);
-  else result = await callChatCompletions(config, prompt, options, request);
+  try {
+    if (providerId === "openai") result = await callOpenAi(config, prompt, options, request);
+    else if (providerId === "xai") result = await callXai(config, prompt, options, request);
+    else if (providerId === "anthropic") result = await callAnthropic(config, prompt, options, request);
+    else if (providerId === "gemini") result = await callGemini(config, prompt, options, request);
+    else result = await callChatCompletions(config, prompt, options, request);
+  } catch (error) {
+    if (providerId === "orcarouter" && (error?.status === 401 || error?.status === 403)) {
+      // Terminal auth failure: surface an actionable message, never the key or
+      // the raw upstream body, and never retry.
+      throw Object.assign(
+        new Error(error.status === 401
+          ? "OrcaRouter rejected the configured API key. Update or clear it in the OrcaRouter provider settings, then retry."
+          : "OrcaRouter refused this request (403). The configured key may not have access to the selected model; choose another model or update the key."),
+        { status: error.status }
+      );
+    }
+    throw error;
+  }
   return { provider: providerId, label: config.label, model: config.model, ...result };
 }
 

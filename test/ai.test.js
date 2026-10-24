@@ -31,12 +31,14 @@ const testEnv = {
   XAI_API_KEY: "test-xai",
   KIMI_API_KEY: "test-kimi",
   DEEPSEEK_API_KEY: "test-deepseek",
+  ORCAROUTER_API_KEY: "test-orcarouter",
   OPENAI_BASE_URL: "https://openai.invalid/v1",
   ANTHROPIC_BASE_URL: "https://anthropic.invalid/v1",
   GEMINI_BASE_URL: "https://gemini.invalid/v1beta",
   XAI_BASE_URL: "https://xai.invalid/v1",
   KIMI_BASE_URL: "https://kimi.invalid/v1",
   DEEPSEEK_BASE_URL: "https://deepseek.invalid",
+  ORCAROUTER_BASE_URL: "https://orcarouter.invalid/v1",
 };
 
 function responseFor(url) {

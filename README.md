@@ -24,8 +24,9 @@ engine. Use it only on projects and tokens you are authorized to investigate.
   the `telegram_bot_api` YARA rule, plus manually check report hashes.
 - **JADX MCP connector** — inspect the Android project already open in JADX
   through local, read-only tools. Ghidra and Binary Ninja support is coming soon.
-- **Multi-model AI investigation** — use OpenAI, Claude, Gemini, Grok, Kimi, or
-  DeepSeek; only exact, format-validated Telegram credentials enter the findings view.
+- **Multi-model AI investigation** — use OpenAI, Claude, Gemini, Grok, Kimi,
+  DeepSeek, or [OrcaRouter](https://www.orcarouter.ai); only exact,
+  format-validated Telegram credentials enter the findings view.
 - **Threat statistics** — use the sidebar tab directly below MCP Lab to combine
   MalwareBazaar YARA metadata, TweetFeed, and dated TI reports into 7/14/30-day
   type, family, filename, campaign, source, and daily-activity charts.
@@ -256,6 +257,7 @@ GEMINI_API_KEY=
 XAI_API_KEY=
 KIMI_API_KEY=
 DEEPSEEK_API_KEY=
+ORCAROUTER_API_KEY=
 ```
 
 An AI key is optional for the local deterministic MCP preflight. It is used only
@@ -266,6 +268,32 @@ The bundled adapters use each provider's REST API. Every default model and
 endpoint can be overridden with `<PROVIDER>_MODEL` and `<PROVIDER>_BASE_URL`;
 see `.env.example` for the complete list. Choose one configured provider in
 **MCP Lab**, enable the AI fallback checkbox, and click **Scan open JADX project**.
+
+#### OrcaRouter
+
+[OrcaRouter](https://www.orcarouter.ai) is an OpenAI-compatible AI gateway that
+routes many providers behind one endpoint. MATKAP registers it as its own named
+provider (`orcarouter`), separate from every direct provider above:
+
+- Inference and model discovery use `https://api.orcarouter.ai/v1`.
+  `ORCAROUTER_BASE_URL` (or `ORCAROUTER_API_BASE_URL` / the shared
+  `ORCA_BASE_URL`) overrides it for self-hosted gateways; remote origins must be
+  HTTPS and plain HTTP is accepted only for loopback development.
+- Add `ORCAROUTER_API_KEY` to `.env`, or open **MCP Lab → AI Provider →
+  OrcaRouter** and use the **API key** field. The key is stored in `.env`
+  (mode `0600`) by the same helper that persists the Telegram session; it never
+  reaches the browser, logs, or error messages. **Clear** removes it.
+- Selecting OrcaRouter loads the live `GET /v1/models?capability=chat` list from
+  the gateway and renders it as a model dropdown on the server side of the key
+  boundary. Only models that advertise an OpenAI/Anthropic/Gemini/Responses
+  endpoint are listed, and models dedicated to image, video, rerank, or embedding
+  routes are excluded. The selected model is re-validated by the server before a
+  scan starts. If discovery fails, MATKAP marks the list as degraded and falls
+  back to a small verified seed (`openai/gpt-5.5`, `anthropic/claude-opus-4.8`,
+  `google/gemini-3.5-flash`, `deepseek/deepseek-v4-pro`, `orcarouter/auto`)
+  instead of falling back to free-text model entry.
+- A rejected key (`401`) produces an actionable "update or clear the key"
+  message; it is never retried in a loop and the key is not echoed.
 
 Provider output is treated as untrusted: candidates must match MATKAP's exact
 Telegram token/chat-id formats before storage. Dashboard bot tokens stay masked
@@ -394,6 +422,9 @@ them. MATKAP does not infer a campaign from a report title or arbitrary tag.
 | `XAI_API_KEY` | no | xAI/Grok API key |
 | `KIMI_API_KEY` | no | Kimi API key (`MOONSHOT_API_KEY` is also accepted) |
 | `DEEPSEEK_API_KEY` | no | DeepSeek API key |
+| `ORCAROUTER_API_KEY` | no | OrcaRouter API key (`ORCA_API_KEY` is also accepted) |
+| `ORCAROUTER_MODEL` | no | OrcaRouter default model; the MCP Lab dropdown overrides it per scan (default `orcarouter/auto`) |
+| `ORCAROUTER_BASE_URL` | no | OrcaRouter inference/model base (default `https://api.orcarouter.ai/v1`; `ORCA_BASE_URL` is the shared self-hosted fallback) |
 | `TELEGRAM_API_ID` | yes* | Controller account api_id |
 | `TELEGRAM_API_HASH` | yes* | Controller account api_hash |
 | `TELEGRAM_PHONE` | first run | Phone used for the first login or session recovery |

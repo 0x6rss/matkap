@@ -26,5 +26,8 @@ build/
 !connectors/jadx/dist/
 !connectors/jadx/dist/**
 
+# Generated UI evidence (test/ui/orca_evidence.py writes it per run)
+orca-evidence/
+
 # Claude
 .claude/

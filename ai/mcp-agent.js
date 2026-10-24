@@ -156,7 +156,7 @@ ${observations.join("\n\n").slice(-MAX_TRANSCRIPT_CHARS) || "No tools have been 
 Set done=false and provide actions while useful project-wide evidence remains. Set done=true only after every connected server has been queried and the relevant source/string/search results have been inspected.`;
 }
 
-export async function runMcpInvestigation({ servers, provider, env = process.env, onProgress = () => {} }, options = {}) {
+export async function runMcpInvestigation({ servers, provider, model: selection = "", env = process.env, onProgress = () => {} }, options = {}) {
   const { generateProviderJson: generator = generateProviderJson, ...providerOptions } = options;
   const connected = servers.filter((server) => Array.isArray(server.tools) && server.tools.some(isSafeReadOnlyTool));
   if (!connected.length) throw new Error("No connected reverse-engineering MCP exposes a safe read-only tool.");
@@ -171,6 +171,8 @@ export async function runMcpInvestigation({ servers, provider, env = process.env
   const maxPreflightFiles = boundedNumber(env.MATKAP_MCP_PREFLIGHT_MAX_FILES, 120, 1, 500);
   const timeoutMs = boundedNumber(env.MATKAP_AI_TIMEOUT_MS, 90_000, 5_000, 300_000);
   const requestOptions = { timeoutMs, ...providerOptions, env };
+  const selectedModel = String(selection || "").trim();
+  if (selectedModel) requestOptions.model = selectedModel;
   const observations = [];
   const calls = [];
   const touched = new Set();

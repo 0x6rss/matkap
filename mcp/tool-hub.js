@@ -202,6 +202,7 @@ export function createToolHub({ env = process.env, connect = defaultConnect, inv
       const result = await investigate({
         servers,
         provider: options.provider,
+        model: options.model,
         env,
         onProgress(update) {
           job.stage = update.stage;

@@ -24,6 +24,15 @@ import { buildThreatStatistics, filterSamplesByDays } from "./statistics.js";
 import { persistEnvValue } from "./env-session.js";
 import { resolveProviders } from "./ai/model-router.js";
 import { listProviderStatus } from "./ai/providers.js";
+import {
+  ORCAROUTER_PROVIDER_ID,
+  assertCompatibleModel,
+  clearOrcaRouterApiKey,
+  getOrcaRouterCatalog,
+  orcaRouterCredentialStatus,
+  publicCatalogPayload,
+  saveOrcaRouterApiKey,
+} from "./ai/orcarouter.js";
 import { createToolHub } from "./mcp/tool-hub.js";
 import {
   clearFindings,
@@ -568,11 +577,21 @@ app.post("/api/mcp/probe", requireLoopback, async (req, res) => {
   }
 });
 
-app.post("/api/mcp/scan", requireLoopback, (req, res) => {
+app.post("/api/mcp/scan", requireLoopback, async (req, res) => {
   const requested = String(req.body?.provider || "").trim().toLowerCase();
   const provider = aiEnabled() && requested ? (resolveProviders([requested], "single")[0] || null) : null;
   try {
-    res.status(202).json({ job: toolHub.startScan({ provider }) });
+    let model = "";
+    if (provider === ORCAROUTER_PROVIDER_ID) {
+      const requestedModel = String(req.body?.model || "").trim();
+      if (requestedModel) {
+        // The dropdown is the source of truth; re-validate server-side so an
+        // arbitrary model string can never reach the gateway.
+        const catalog = await getOrcaRouterCatalog({ capability: "chat" });
+        model = assertCompatibleModel(catalog.models, requestedModel, { capability: "chat" }).id;
+      }
+    }
+    res.status(202).json({ job: toolHub.startScan({ provider, model }) });
   } catch (error) {
     res.status(error.code === "SCAN_BUSY" ? 409 : 400).json({ error: String(error.message || error).slice(0, 500) });
   }
@@ -610,6 +629,53 @@ app.get("/api/ai/providers", requireLoopback, (req, res) => {
     primary: process.env.MATKAP_AI_PRIMARY || "openai",
     providers: listProviderStatus(),
   });
+});
+
+const ORCAROUTER_CAPABILITIES = new Set(["chat", "embedding", "image", "video", "rerank"]);
+
+// Server-side model discovery: the browser receives minimal metadata only, never
+// the OrcaRouter API key.
+app.get("/api/ai/models", requireLoopback, async (req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  const provider = String(req.query.provider || ORCAROUTER_PROVIDER_ID).trim().toLowerCase();
+  if (provider !== ORCAROUTER_PROVIDER_ID) {
+    return res.status(400).json({ error: "Model discovery is only available for OrcaRouter." });
+  }
+  const capability = String(req.query.capability || "chat").trim().toLowerCase();
+  if (!ORCAROUTER_CAPABILITIES.has(capability)) {
+    return res.status(400).json({ error: "Unsupported capability." });
+  }
+  try {
+    const catalog = await getOrcaRouterCatalog({ capability, refresh: req.query.refresh === "1" });
+    res.json(publicCatalogPayload(catalog));
+  } catch (error) {
+    res.status(502).json({ error: String(error?.message || error).slice(0, 300) });
+  }
+});
+
+app.get("/api/orcarouter/credential", requireLoopback, (req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  res.json(orcaRouterCredentialStatus(process.env));
+});
+
+app.post("/api/orcarouter/credential", requireLoopback, async (req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  try {
+    const status = await saveOrcaRouterApiKey(req.body?.apiKey);
+    res.json({ ...status, saved: true });
+  } catch (error) {
+    res.status(400).json({ error: String(error?.message || error).slice(0, 300) });
+  }
+});
+
+app.delete("/api/orcarouter/credential", requireLoopback, async (req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  try {
+    const status = await clearOrcaRouterApiKey();
+    res.json({ ...status, cleared: true });
+  } catch (error) {
+    res.status(500).json({ error: String(error?.message || error).slice(0, 300) });
+  }
 });
 
 app.post("/api/mcp/findings/:id/reveal", requireLoopback, (req, res) => {
